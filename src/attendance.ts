@@ -111,8 +111,9 @@ export async function checkAttendence(date:Date,first?:boolean){
           }
         }else if(hour>= (cred.In || 9)){
           try{
+            let day = date.getDay();
             if(checkSignedOutStatus(cred?.userName) || first)
-            await attendence(cred.userName,cred.password,true);
+            await attendence(cred.userName,cred.password,first? (day==0 || day == 6)? false:true:true);
           }
           catch(err){
             logger.info("failed to check attendence for "+cred.userName+err);
