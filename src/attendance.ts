@@ -1,17 +1,15 @@
 import puppeteer from "puppeteer";
-import { getCreds, getSignInStatus, logger, setSignInStatus } from './constants';
+import { checkSignedOutStatus, getCreds, logger, readStats, updateSignedOutStatus } from './constants';
 import isReachable from "is-reachable";
 
-let checkSignOut = false;
+
 
 export async function attendence(userName:string,password:string,signIn:boolean){
 
-    logger.info(""+signIn+getSignInStatus()+checkSignOut);
+  const browser = await puppeteer.launch({ headless: true,executablePath:`C:/Program Files/Google/Chrome/Application/chrome.exe` });
+  try{
+      logger.info(""+signIn+checkSignedOutStatus(userName));
 
-    if(signIn && getSignInStatus()) return;
-    if(!signIn && !getSignInStatus() && checkSignOut) return;
-
-    const browser = await puppeteer.launch({ headless: true,executablePath:`C:/Program Files/Google/Chrome/Application/chrome.exe` });
     const userAgent = 'Mozilla/5.0 (X11; Linux x86_64)' +
     'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.39 Safari/537.36';
     // Open a new page/tab
@@ -46,57 +44,81 @@ export async function attendence(userName:string,password:string,signIn:boolean)
     if(text == "Sign Out"){
         if(!signIn){
           await button_sign.click();  //sign out
-          setSignInStatus(false);
-          checkSignOut = true;
-          logger.info("signed out "+userName)
-          console.log("signed out "+userName)
+          updateSignedOutStatus(userName,true);
+          logger.info("signed out "+userName+","+checkSignedOutStatus(userName))
+          console.log("signed out "+userName,",",checkSignedOutStatus(userName))
        }
        else{
-        logger.info("already signed in "+userName);
-        console.log("already signed in "+userName);
-        setSignInStatus(true);
+        logger.info("already signed in "+userName+","+checkSignedOutStatus(userName));
+        console.log("already signed in "+userName,","+checkSignedOutStatus(userName));
+        updateSignedOutStatus(userName,false);
        }
     }
     else{
       if(signIn){
         await button_sign.click();  //sign in
-        setSignInStatus(true);
-        logger.info("signed in "+userName)
-        console.log("signed in "+userName)
+        logger.info("signed in "+userName+","+checkSignedOutStatus(userName))
+        console.log("signed in "+userName+","+checkSignedOutStatus(userName))
+        updateSignedOutStatus(userName,false)
       }
       else{
-        logger.info("already signed out "+userName);
-        console.log("already signed out "+userName);
-        setSignInStatus(false);
-        checkSignOut = true;
+        logger.info("already signed out "+userName+","+checkSignedOutStatus(userName));
+        console.log("already signed out "+userName+","+checkSignedOutStatus(userName));
+        // checkSignOut = true;
+        updateSignedOutStatus(userName,true);
       }
     }
 
-      await browser.close();
+  }catch(err){
+    console.log("failed to mark attendence",err)
+    logger.warning("failed to mark attendence"+err)
+    await browser.close();
+    attendence(userName,password,signIn)
+  }
+  await browser.close();
 }
 
-export async function checkAttendence(date:Date){
+export async function checkAttendence(date:Date,first?:boolean){
     let hour = date.getHours();
     let creds = getCreds();
+    await readStats();
     logger.info("from cron"+JSON.stringify(creds)+hour+date);
     console.log("from cron"+JSON.stringify(creds)+hour+date)
+    
     try{
 
-      if(!await isReachable("www.google.com",{timeout:5000})) {
+      if(!await isReachable("www.google.com",{timeout:10000})) {
         logger.info("laptop is offline can't proceed to login");
         console.log("laptop is offline can't proceed to login");
         return;
+    }}
+    catch(err){
+      logger.info("failed to check attendence"+err);
+      console.log("failed to check attendence",err);
+      return;
     }
 
       for(const cred of creds){
+        logger.info("signed out status - > "+checkSignedOutStatus(cred.userName)+cred.In+","+cred.Out+"cur hr-"+hour);
+        console.log("signed out status - > "+checkSignedOutStatus(cred.userName)+cred.In+","+cred.Out+"cur hr-"+hour)
         if(hour>= (cred?.Out || 20)){
-          await attendence(cred.userName,cred.password,false);
-        }else if(hour> (cred.In || 9)){
-          await attendence(cred.userName,cred.password,true);
+          try{
+            if(!checkSignedOutStatus(cred?.userName) || first)
+            await attendence(cred.userName,cred.password,false);
+          }catch(err){
+            logger.info("failed to check attendence for "+cred.userName+err);
+            console.log("failed to check attendence",cred.userName,err);
+          }
+        }else if(hour>= (cred.In || 9)){
+          try{
+            if(checkSignedOutStatus(cred?.userName) || first)
+            await attendence(cred.userName,cred.password,true);
+          }
+          catch(err){
+            logger.info("failed to check attendence for "+cred.userName+err);
+            console.log("failed to check attendence",cred.userName,err);
+          }
         }
       }
-    }
-    catch(err){
-      logger.info("failed to check attendence"+err);
-    }
+    
 }

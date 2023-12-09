@@ -1,7 +1,7 @@
 import express from "express";
 import { attendence, checkAttendence } from "./attendance";
 import cron from "node-cron"
-import { Creds, getCreds, initializeJson, logger, readCredentials, updateCredentials } from "./constants";
+import { Creds, checkSignedOutStatus, getCreds, initializeJson, logger, readCredentials, updateCredentials, updateSignedOutStatus } from "./constants";
 
 const app = express();
 let cronStarted = false;
@@ -11,7 +11,7 @@ async function startCron(){
         try{
             logger.info("starting cron");
             console.log("starting cron");
-            checkAttendence(new Date());
+            checkAttendence(new Date(),true);
             //@ts-ignore
             cron.schedule("0 * * * 1-5",checkAttendence);
             // cron.schedule("* * * * * 1-5",checkAttendence);
@@ -47,14 +47,6 @@ app.get("/user",async (req,res)=>{
     // console.log("before set in out")
 
     if(start){
-        await startCron();
-    }
-    else{
-        logger.info("cron job already started!");
-        console.log("cron job already started!");
-    }
-
-    if(start){
         let creds:Creds = {
             userName: <string>params?.id,
             password: <string>params?.pass
@@ -72,12 +64,20 @@ app.get("/user",async (req,res)=>{
         let newCreds = oldCreds.map(cred => {
             let has = cred.userName == creds.userName;
             if(has) replace = true;
+            else updateSignedOutStatus(creds.userName,false);
 
             return has? creds:cred;
         });
         
         try{
             await updateCredentials(replace? newCreds:[...oldCreds,creds]);
+            if(start){
+                await startCron();
+            }
+            else{
+                logger.info("cron job already started!");
+                console.log("cron job already started!");
+            }
         }
         catch(err){
             logger.info("failed to update and read credentials"+err);
@@ -98,8 +98,10 @@ async function init(){
         logger.info("failed to initialize json data"+err);
         console.log("failed to initialize json data"+err);
     }
+    
     let creds = getCreds();
-    if(creds.length > 0) {
+
+    if(creds?.length > 0) {
         await startCron();
     }else{
         logger.info("not starting cron,no users exists from init...");
