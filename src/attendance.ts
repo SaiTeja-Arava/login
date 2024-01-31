@@ -6,9 +6,9 @@ import isReachable from "is-reachable";
 
 export async function attendence(userName:string,password:string,signIn:boolean){
 
-  const browser = await puppeteer.launch({ headless: true,executablePath:`C:/Program Files/Google/Chrome/Application/chrome.exe` });
+  const browser = await puppeteer.launch({ headless: false,executablePath:`C:/Program Files/Google/Chrome/Application/chrome.exe` });
   try{
-      logger.info(""+signIn+checkSignedOutStatus(userName));
+    logger.info(""+signIn+checkSignedOutStatus(userName));
 
     const userAgent = 'Mozilla/5.0 (X11; Linux x86_64)' +
     'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.39 Safari/537.36';
@@ -78,7 +78,7 @@ export async function attendence(userName:string,password:string,signIn:boolean)
   await browser.close();
 }
 
-export async function checkAttendence(date:Date,first?:boolean){
+export async function checkAttendence(date:Date,first?:boolean,id?:string){
     let hour = date.getHours();
     let creds = getCreds();
     await readStats();
@@ -99,6 +99,8 @@ export async function checkAttendence(date:Date,first?:boolean){
     }
 
       for(const cred of creds){
+        if(id && id != cred.userName) continue;
+        
         logger.info("signed out status - > "+checkSignedOutStatus(cred.userName)+cred.In+","+cred.Out+"cur hr-"+hour);
         console.log("signed out status - > "+checkSignedOutStatus(cred.userName)+cred.In+","+cred.Out+"cur hr-"+hour)
         if(hour>= (cred?.Out || 20)){

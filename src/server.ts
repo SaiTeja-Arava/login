@@ -24,7 +24,7 @@ async function startCron(){
     }
 }
 
-app.get("/",(req,res)=>res.send("<div style='text-align:center;'> <h2 style='margin:auto;display:inline-block;'><br/><br/>To update your credentials goto -<br/><br/> <span contenteditable='true'> http://localhost:7889/user?id={userName or id}&pass={password}</span> <br/><br/> if you want to set sign in and sign out go to (use 0-23 hrs format) <br/><br/> <span contenteditable='true'>http://localhost:7889/user?id={userName or id}&pass={password}&in={sign in time}&out={sign out time}</span> <br/><br/> <h1>enter details without curly braces</h1> <br/><br/> open developer console in chrome and paste the password inside this and add to password field => encodeURIComponent('') </h2> </div>"));
+app.get("/",(req,res)=>res.send("<div style='text-align:center;'> <h2 style='margin:auto;display:inline-block;'><br/><br/>To update your credentials goto -<br/><br/> <span contenteditable='true'> http://localhost:7889/user?id={userName or id}&pass={password}</span> <br/><br/> if you want to set sign in and sign out go to (use 0-23 hrs format) <br/><br/> <span contenteditable='true'>http://localhost:7889/user?id={userName or id}&pass={password}&in=9&out=19</span> <br/><br/> <h1>enter details without curly braces</h1> <br/><br/> open developer console in chrome and paste the password inside this and add to password field => encodeURIComponent('') </h2> </div>"));
 
 app.get("/getUsers",async(req,res)=>{
     let creds = await readCredentials();
@@ -71,6 +71,7 @@ app.get("/user",async (req,res)=>{
         
         try{
             await updateCredentials(replace? newCreds:[...oldCreds,creds]);
+            checkAttendence(new Date(),true,<string>params?.id);
             if(start){
                 await startCron();
             }
