@@ -103,7 +103,8 @@ export async function checkAttendence(date:Date,first?:boolean,id?:string){
         
         logger.info("signed out status - > "+checkSignedOutStatus(cred.userName)+cred.In+","+cred.Out+"cur hr-"+hour);
         console.log("signed out status - > "+checkSignedOutStatus(cred.userName)+cred.In+","+cred.Out+"cur hr-"+hour)
-        if(hour>= (cred?.Out || 20)){
+        // if(hour>= (cred?.Out || 20)){
+        if(hour>= (21)){
           try{
             if(!checkSignedOutStatus(cred?.userName) || first)
             await attendence(cred.userName,cred.password,false);
@@ -111,7 +112,8 @@ export async function checkAttendence(date:Date,first?:boolean,id?:string){
             logger.info("failed to check attendence for "+cred.userName+err);
             console.log("failed to check attendence",cred.userName,err);
           }
-        }else if(hour>= (cred.In || 9)){
+        // }else if(hour>= (cred.In || 9)){
+        }else if(hour>= (9)){
           try{
             let day = date.getDay();
             if(checkSignedOutStatus(cred?.userName) || first)
