@@ -4,9 +4,13 @@ import isReachable from "is-reachable";
 
 
 
-export async function attendence(userName:string,password:string,signIn:boolean){
+export async function attendence(userName:string,password:string,signIn:boolean, retries: number = 3){
 
-  const browser = await puppeteer.launch({ headless: false,executablePath:`C:/Program Files/Google/Chrome/Application/chrome.exe` });
+  if(retries == 0){
+    return
+  }
+
+  const browser = await puppeteer.launch({ headless: true,executablePath:`C:/Program Files/Google/Chrome/Application/chrome.exe` });
   try{
     logger.info(""+signIn+checkSignedOutStatus(userName));
 
@@ -73,7 +77,7 @@ export async function attendence(userName:string,password:string,signIn:boolean)
     console.log("failed to mark attendence",err)
     logger.warning("failed to mark attendence"+err)
     await browser.close();
-    attendence(userName,password,signIn)
+    attendence(userName,password,signIn, retries - 1)
   }
   await browser.close();
 }
