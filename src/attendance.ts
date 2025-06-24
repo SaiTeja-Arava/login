@@ -31,7 +31,7 @@ export async function attendence(userName:string,password:string,signIn:boolean,
     // Optional: Take a screenshot of the page
     await page.type("#username",userName);
     await page.type("#password",password)
-    let button = await page.$x(`//button[contains(text(), 'Log in')]`);
+    let button = await page.$x(`//button[contains(text(), 'Login')]`);
     //@ts-ignore
     let btn:HTMLButtonElement = button[0];
     await btn.click()
