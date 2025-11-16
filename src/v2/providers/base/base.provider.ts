@@ -38,7 +38,7 @@ export abstract class BaseAttendanceProvider implements IAttendanceProvider {
         const context = this.browser?.defaultBrowserContext();
         const url = new URL(this.config.loginUrl);
 
-        console.log(`[${this.getName()}] Enabling geolocation permissions...`, url.origin);
+        console.log(`[${this.getName()}] Enabling geolocation permissions...`);
 
         await context?.overridePermissions(url.origin, ['geolocation']);
     }
