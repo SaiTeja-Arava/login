@@ -5,7 +5,11 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "watch": "tsc -w"
+    "watch": "tsc -w",
+    "build": "tsc && npm run copy:public",
+    "copy:public": "mkdir -p dist/v2/public && cp -r src/v2/public/* dist/v2/public/",
+    "dev:v2": "npm run build && node dist/v2/index.js",
+    "start:v2": "node dist/v2/index.js"
   },
   "keywords": [],
   "author": "",
@@ -16,14 +20,15 @@
     "minimist": "^1.2.8",
     "node-cron": "^3.0.2",
     "node-windows": "1.0.0-beta.8",
-    "puppeteer": "^19.11.1",
-    "typescript": "^5.2.2"
+    "puppeteer": "^19.11.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.20",
     "@types/minimist": "^1.2.5",
     "@types/node-cron": "^3.0.10",
     "@types/node-windows": "^0.1.5",
-    "@types/puppeteer": "^7.0.4"
+    "@types/puppeteer": "^7.0.4",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.3"
   }
 }

@@ -1,0 +1,160 @@
+import { User, CreateUserRequest } from '../models/user.model';
+import { encrypt, decrypt } from '../utils/encryption.util';
+import { validateUser } from '../utils/validation.util';
+import { readUsersFromFile, writeUsersToFile } from '../utils/file.util';
+
+/**
+ * Finds a user by ID
+ * @param id - User ID to search for
+ * @returns User object with decrypted password, or null if not found
+ */
+export async function findUserById(id: string): Promise<User | null> {
+    const users = await readUsersFromFile();
+    const user = users.find(u => u.id === id);
+
+    if (!user) {
+        return null;
+    }
+
+    // Decrypt password before returning
+    return {
+        ...user,
+        password: decrypt(user.password)
+    };
+}
+
+/**
+ * Creates a new user
+ * @param userData - User data to create
+ * @returns Created user with encrypted password
+ * @throws Error if validation fails or user already exists
+ */
+export async function createUser(userData: CreateUserRequest): Promise<User> {
+    // Validate user data
+    const validationErrors = validateUser(userData);
+    if (validationErrors.length > 0) {
+        const error = new Error('Validation failed');
+        (error as any).statusCode = 400;
+        (error as any).errors = validationErrors;
+        throw error;
+    }
+
+    // Check if user already exists
+    const users = await readUsersFromFile();
+    const existingUser = users.find(u => u.id === userData.id);
+
+    if (existingUser) {
+        const error = new Error('User already exists');
+        (error as any).statusCode = 409;
+        throw error;
+    }
+
+    // Encrypt password
+    const encryptedPassword = encrypt(userData.password);
+
+    // Create new user object
+    const newUser: User = {
+        id: userData.id,
+        password: encryptedPassword,
+        loginTime: userData.loginTime,
+        logoutTime: userData.logoutTime,
+        weekdays: userData.weekdays
+    };
+
+    // Add to users array and save
+    users.push(newUser);
+    await writeUsersToFile(users);
+
+    return newUser;
+}
+
+/**
+ * Updates an existing user
+ * @param id - User ID to update
+ * @param userData - Updated user data
+ * @returns Updated user with encrypted password
+ * @throws Error if user not found or validation fails
+ */
+export async function updateUser(id: string, userData: CreateUserRequest): Promise<User> {
+    // Validate user data
+    const validationErrors = validateUser(userData);
+    if (validationErrors.length > 0) {
+        const error = new Error('Validation failed');
+        (error as any).statusCode = 400;
+        (error as any).errors = validationErrors;
+        throw error;
+    }
+
+    const users = await readUsersFromFile();
+    const userIndex = users.findIndex(u => u.id === id);
+
+    if (userIndex === -1) {
+        const error = new Error('User not found');
+        (error as any).statusCode = 404;
+        throw error;
+    }
+
+    // Encrypt password
+    const encryptedPassword = encrypt(userData.password);
+
+    // Update user object
+    const updatedUser: User = {
+        id: id,
+        password: encryptedPassword,
+        loginTime: userData.loginTime,
+        logoutTime: userData.logoutTime,
+        weekdays: userData.weekdays
+    };
+
+    users[userIndex] = updatedUser;
+    await writeUsersToFile(users);
+
+    return updatedUser;
+}
+
+/**
+ * Deletes a user by ID
+ * @param id - User ID to delete
+ * @returns true if deleted successfully
+ * @throws Error if user not found
+ */
+export async function deleteUser(id: string): Promise<boolean> {
+    const users = await readUsersFromFile();
+    const userIndex = users.findIndex(u => u.id === id);
+
+    if (userIndex === -1) {
+        const error = new Error('User not found');
+        (error as any).statusCode = 404;
+        throw error;
+    }
+
+    users.splice(userIndex, 1);
+    await writeUsersToFile(users);
+
+    return true;
+}
+
+/**
+ * Syncs a user (creates if new, updates if exists)
+ * @param userData - User data to sync
+ * @returns Object containing the user and a flag indicating if it's new
+ */
+export async function syncUser(userData: CreateUserRequest): Promise<{ user: User; isNew: boolean }> {
+    const existingUser = await findUserById(userData.id);
+
+    if (existingUser) {
+        // User exists, update it
+        const updatedUser = await updateUser(userData.id, userData);
+        return {
+            user: updatedUser,
+            isNew: false
+        };
+    } else {
+        // User doesn't exist, create it
+        const newUser = await createUser(userData);
+        return {
+            user: newUser,
+            isNew: true
+        };
+    }
+}

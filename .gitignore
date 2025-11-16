@@ -131,3 +131,9 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# User data storage (sensitive)
+src/v2/data/users.json
+src/v2/data/attendance_logs.json
+dist/v2/data/users.json
+dist/v2/data/attendance_logs.json
