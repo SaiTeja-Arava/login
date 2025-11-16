@@ -376,7 +376,7 @@ export class AkriviaProvider extends BaseAttendanceProvider {
             if (!this.page) {
                 await this.initialize();
             }
-            
+
             await this.enableGeolocation();
 
             console.log(`[${this.getName()}] ========================================`);
@@ -516,7 +516,3 @@ export class AkriviaProvider extends BaseAttendanceProvider {
         }
     }
 }
-
-
-const provider = new AkriviaProvider();
-provider.login({ userId: '1188', password: 'Sai123##' });
