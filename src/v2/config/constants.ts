@@ -17,7 +17,7 @@ export const SALT = 'attendance_automation_salt_2025';
 /**
  * Server configuration
  */
-export const SERVER_PORT = 3000;
+export const SERVER_PORT = 7889;
 
 /**
  * Automation configuration
