@@ -64,6 +64,8 @@ export abstract class BaseAttendanceProvider implements IAttendanceProvider {
 
         });
 
+        await this.enableGeolocation();
+
         this.page = await this.browser.newPage();
 
         await this.page.setViewport({

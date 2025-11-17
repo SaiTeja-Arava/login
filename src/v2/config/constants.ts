@@ -26,8 +26,8 @@ export const SERVER_PORT = 7889;
 export const AUTOMATION_CONFIG = {
     /** Cron schedule for automation (runs every minute) */
     CRON_SCHEDULE: '* * * * *',
-    /** Time window tolerance in minutes (±2 minutes from scheduled time) */
-    TIME_WINDOW_MINUTES: 2,
+    /** Time window tolerance in minutes (±6 minutes from scheduled time) */
+    TIME_WINDOW_MINUTES: 6,
     /** Maximum number of retry attempts for failed executions */
     MAX_RETRY_ATTEMPTS: 3,
     /** Delay in milliseconds between retry attempts */

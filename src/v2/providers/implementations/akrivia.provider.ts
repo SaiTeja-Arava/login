@@ -377,8 +377,6 @@ export class AkriviaProvider extends BaseAttendanceProvider {
                 await this.initialize();
             }
 
-            await this.enableGeolocation();
-
             console.log(`[${this.getName()}] ========================================`);
             console.log(`[${this.getName()}] Starting LOGIN for user: ${credentials.userId}`);
             console.log(`[${this.getName()}] ========================================`);
