@@ -9,9 +9,11 @@
  * @property {number} loginAttempts - Number of login attempts made today
  * @property {boolean} loginSuccess - Whether login succeeded today (prevents duplicate executions)
  * @property {string} [loginTime] - ISO timestamp of last login attempt (optional)
+ * @property {string} [actualInTime] - Actual "In time" from attendance system (e.g., "12:15 PM") (optional)
  * @property {number} logoutAttempts - Number of logout attempts made today
  * @property {boolean} logoutSuccess - Whether logout succeeded today (prevents duplicate executions)
  * @property {string} [logoutTime] - ISO timestamp of last logout attempt (optional)
+ * @property {string} [actualOutTime] - Actual "Out time" from attendance system (e.g., "7:30 PM") (optional)
  * @property {string} [lastError] - Last error message if execution failed (optional)
  */
 export interface TodayStatus {
@@ -19,9 +21,11 @@ export interface TodayStatus {
     loginAttempts: number;
     loginSuccess: boolean;
     loginTime?: string;
+    actualInTime?: string;
     logoutAttempts: number;
     logoutSuccess: boolean;
     logoutTime?: string;
+    actualOutTime?: string;
     lastError?: string;
 }
 

@@ -25,10 +25,14 @@ export interface AttendanceActionParams {
  * @interface AttendanceActionResult
  * @property {boolean} log_in - True if login action was successful, false otherwise
  * @property {boolean} log_out - True if logout action was successful, false otherwise
+ * @property {string} [actualInTime] - Actual "In time" from attendance system (e.g., "12:15 PM") (optional)
+ * @property {string} [actualOutTime] - Actual "Out time" from attendance system (e.g., "7:30 PM") (optional)
  */
 export interface AttendanceActionResult {
     log_in: boolean;
     log_out: boolean;
+    actualInTime?: string;
+    actualOutTime?: string;
 }
 
 /**

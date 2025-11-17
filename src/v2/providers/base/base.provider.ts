@@ -41,6 +41,8 @@ export abstract class BaseAttendanceProvider implements IAttendanceProvider {
         console.log(`[${this.getName()}] Enabling geolocation permissions...`);
 
         await context?.overridePermissions(url.origin, ['geolocation']);
+
+        await new Promise(resolve => setTimeout(resolve, 1000));
     }
 
     /**

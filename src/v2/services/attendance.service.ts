@@ -11,7 +11,7 @@
 import { User } from '../models/user.model';
 import { AttendanceLog } from '../models/attendance.model';
 import { readUsersFromFile, writeUsersToFile } from '../utils/file.util';
-import { getCurrentDate, getCurrentDayOfWeek, formatTime, isWithinTimeWindow } from '../utils/time.util';
+import { getCurrentDate, getCurrentDayOfWeek, formatTime, isWithinTimeWindow, isAfterScheduledTime, isWithinHoursAfter, isBetweenTimes } from '../utils/time.util';
 import { resetUserStatusIfNeeded, updateActionStatus } from '../utils/status.util';
 import { appendLog, getFilteredLogs as getFilteredLogsUtil } from '../utils/attendance-log.util';
 import { AUTOMATION_CONFIG } from '../config/constants';
@@ -73,19 +73,52 @@ export async function getEligibleUsers(
                 continue;
             }
 
-            // Check login eligibility
+            // Check login eligibility with extended retry window
+            // Strategy: Keep trying until successful or until emergency logout window starts
             const needsLogin =
-                !user.todayStatus?.loginSuccess && // Skip if already succeeded
-                isWithinTimeWindow(currentTime, user.loginTime, AUTOMATION_CONFIG.TIME_WINDOW_MINUTES);
+                !user.todayStatus?.loginSuccess && // Not logged in yet
+                currentTime < AUTOMATION_CONFIG.EMERGENCY_LOGOUT_START && // Before emergency window (still reasonable time to login)
+                (
+                    // Normal window: scheduled time ±6 minutes
+                    isWithinTimeWindow(currentTime, user.loginTime, AUTOMATION_CONFIG.TIME_WINDOW_MINUTES) ||
+
+                    // Extended retry window: up to 2 hours after scheduled time with attempt limit
+                    (
+                        isAfterScheduledTime(currentTime, user.loginTime) &&
+                        isWithinHoursAfter(currentTime, user.loginTime, AUTOMATION_CONFIG.EXTENDED_RETRY_HOURS) &&
+                        (user.todayStatus?.loginAttempts || 0) < AUTOMATION_CONFIG.MAX_RETRY_ATTEMPTS
+                    ) ||
+
+                    // Continuous retry: After extended window expires, keep trying (no attempt limit)
+                    // This ensures we NEVER miss a login as long as it's before emergency logout time
+                    (
+                        isAfterScheduledTime(currentTime, user.loginTime) &&
+                        !isWithinHoursAfter(currentTime, user.loginTime, AUTOMATION_CONFIG.EXTENDED_RETRY_HOURS)
+                    )
+                );
 
             if (needsLogin) {
                 eligibleUsers.push({ user, action: 'login' });
             }
 
-            // Check logout eligibility
+            // Check logout eligibility with smart logic
+            // Strategy: ALWAYS try to logout if logged in (never miss the punch)
             const needsLogout =
-                !user.todayStatus?.logoutSuccess && // Skip if already succeeded
-                isWithinTimeWindow(currentTime, user.logoutTime, AUTOMATION_CONFIG.TIME_WINDOW_MINUTES);
+                !user.todayStatus?.logoutSuccess && // Not logged out yet
+                (
+                    // Normal window: scheduled logout time ±6 minutes
+                    isWithinTimeWindow(currentTime, user.logoutTime, AUTOMATION_CONFIG.TIME_WINDOW_MINUTES) ||
+
+                    // Smart window: If logged in, allow logout anytime after scheduled time
+                    (
+                        user.todayStatus?.loginSuccess && // User has logged in today
+                        isAfterScheduledTime(currentTime, user.logoutTime) // After scheduled logout time
+                    ) ||
+
+                    // Emergency window: Even without login, try logout in emergency window
+                    // (Better to have partial attendance than nothing)
+                    isBetweenTimes(currentTime, AUTOMATION_CONFIG.EMERGENCY_LOGOUT_START, AUTOMATION_CONFIG.EMERGENCY_LOGOUT_END)
+                );
 
             if (needsLogout) {
                 eligibleUsers.push({ user, action: 'logout' });
@@ -105,13 +138,14 @@ export async function getEligibleUsers(
  * This function:
  * 1. Reads all users from storage
  * 2. Finds the specific user
- * 3. Updates their todayStatus (increments attempts, sets success flag, timestamp)
+ * 3. Updates their todayStatus (increments attempts, sets success flag, timestamp, actual times)
  * 4. Saves back to storage immediately
  * 
  * @param {string} userId - The ID of the user to update
  * @param {'login' | 'logout'} action - The action that was performed
  * @param {boolean} success - Whether the action succeeded
  * @param {string} [error] - Optional error message if failed
+ * @param {string} [actualTime] - Optional actual time from attendance system (e.g., "12:15 PM")
  * @returns {Promise<void>}
  * @throws {Error} If user not found or update fails
  */
@@ -119,7 +153,8 @@ export async function updateUserStatus(
     userId: string,
     action: 'login' | 'logout',
     success: boolean,
-    error?: string
+    error?: string,
+    actualTime?: string
 ): Promise<void> {
     try {
         // Read all users
@@ -131,13 +166,13 @@ export async function updateUserStatus(
             throw new Error(`User not found: ${userId}`);
         }
 
-        // Update the user's status
-        users[userIndex] = updateActionStatus(users[userIndex], action, success, error);
+        // Update the user's status with actual time
+        users[userIndex] = updateActionStatus(users[userIndex], action, success, error, actualTime);
 
         // Save immediately
         await writeUsersToFile(users);
 
-        console.log(`✓ Updated ${action} status for user ${userId}: ${success ? 'SUCCESS' : 'FAILED'}`);
+        console.log(`✓ Updated ${action} status for user ${userId}: ${success ? 'SUCCESS' : 'FAILED'}${actualTime ? ` (actual time: ${actualTime})` : ''}`);
     } catch (error) {
         console.error('Error updating user status:', error);
         throw new Error(`Failed to update user status: ${error}`);

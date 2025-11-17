@@ -58,7 +58,8 @@ export async function performAttendanceAction(
 
             return {
                 log_in: result.success,
-                log_out: false
+                log_out: false,
+                actualInTime: result.actualInTime
             };
 
         } else if (action === 'logout') {
@@ -67,7 +68,8 @@ export async function performAttendanceAction(
 
             return {
                 log_in: false,
-                log_out: result.success
+                log_out: result.success,
+                actualOutTime: result.actualOutTime
             };
 
         } else {

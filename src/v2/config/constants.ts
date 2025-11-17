@@ -28,6 +28,12 @@ export const AUTOMATION_CONFIG = {
     CRON_SCHEDULE: '* * * * *',
     /** Time window tolerance in minutes (±6 minutes from scheduled time) */
     TIME_WINDOW_MINUTES: 6,
+    /** Extended retry window in hours after scheduled time (for recovery from failures) */
+    EXTENDED_RETRY_HOURS: 2,
+    /** Emergency logout time - start attempting logout after this time (HH:MM format) */
+    EMERGENCY_LOGOUT_START: '22:00',
+    /** Latest time to attempt logout before day ends (HH:MM format) */
+    EMERGENCY_LOGOUT_END: '23:59',
     /** Maximum number of retry attempts for failed executions */
     MAX_RETRY_ATTEMPTS: 3,
     /** Delay in milliseconds between retry attempts */

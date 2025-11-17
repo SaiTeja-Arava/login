@@ -136,19 +136,22 @@ export function resetAllUsersIfNeeded(
  * @param {'login' | 'logout'} action - The action type
  * @param {boolean} success - Whether the action succeeded
  * @param {string} [error] - Optional error message if failed
+ * @param {string} [actualTime] - Optional actual time from attendance system (e.g., "12:15 PM")
  * @returns {User} User with updated status
  * 
  * @example
  * const user = { id: "1188", todayStatus: { ... } };
- * const updated = updateActionStatus(user, 'login', true);
+ * const updated = updateActionStatus(user, 'login', true, undefined, "12:15 PM");
  * // updated.todayStatus.loginAttempts === original + 1
  * // updated.todayStatus.loginSuccess === true
+ * // updated.todayStatus.actualInTime === "12:15 PM"
  */
 export function updateActionStatus(
     user: User,
     action: 'login' | 'logout',
     success: boolean,
-    error?: string
+    error?: string,
+    actualTime?: string
 ): User {
     // Ensure user has todayStatus
     const currentDate = getCurrentDate();
@@ -165,11 +168,13 @@ export function updateActionStatus(
         ...(action === 'login' ? {
             loginAttempts: status.loginAttempts + 1,
             loginSuccess: success,
-            loginTime: new Date().toISOString()
+            loginTime: new Date().toISOString(),
+            actualInTime: actualTime || status.actualInTime
         } : {
             logoutAttempts: status.logoutAttempts + 1,
             logoutSuccess: success,
-            logoutTime: new Date().toISOString()
+            logoutTime: new Date().toISOString(),
+            actualOutTime: actualTime || status.actualOutTime
         }),
         lastError: error || status.lastError
     };

@@ -69,6 +69,8 @@ export class AkriviaProvider extends BaseAttendanceProvider {
             // Wait for punch card to load
             await page.waitForSelector(this.SELECTORS.punchCard, { timeout: this.config.timeoutMs });
 
+            console.log(`[${this.getName()}] Parsing today's punches from punch card...`);
+
             // Extract HTML content
             const cardHtml = await page.evaluate((selector) => {
                 const element = document.querySelector(selector);
@@ -91,14 +93,20 @@ export class AkriviaProvider extends BaseAttendanceProvider {
             // Extract punch times using DOM manipulation in page context
             const punchData = await page.evaluate((punchCardSelector) => {
                 const punchCard = document.querySelector(punchCardSelector);
-                if (!punchCard) return { inTime: '—', outTime: '—' };
+                if (!punchCard) {
+                    console.log(`[${this.getName()}] Punch card element not found during evaluation`);
+                    throw new Error('Punch card element not found during evaluation');
+                }
 
                 // Find all shift data sections
                 const shiftDataElements = punchCard.querySelectorAll('.ah-shift-data');
 
                 // Get the first one (today's data)
                 const todaySection = shiftDataElements[0];
-                if (!todaySection) return { inTime: '—', outTime: '—' };
+                if (!todaySection) {
+                    console.log(`[${this.getName()}] Today's shift data section not found`);
+                    throw new Error("Today's shift data section not found");
+                }
 
                 // Find all shift content sets (In time and Out time)
                 const contentSets = todaySection.querySelectorAll('.ah-shift-content-set');
@@ -265,6 +273,7 @@ export class AkriviaProvider extends BaseAttendanceProvider {
         }
 
         console.log(`[${this.getName()}] Successfully authenticated and navigated to attendance dashboard`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
     }
 
     /**
@@ -394,7 +403,8 @@ export class AkriviaProvider extends BaseAttendanceProvider {
                 return {
                     success: true,
                     message: `Already logged in today at ${punchData.inTime}`,
-                    timestamp: new Date()
+                    timestamp: new Date(),
+                    actualInTime: punchData.inTime
                 };
             }
 
@@ -407,11 +417,14 @@ export class AkriviaProvider extends BaseAttendanceProvider {
             const verified = await this.verifyPunchSuccess('login');
 
             if (verified) {
+                // Re-parse to get the actual time that was just punched
+                const updatedPunchData = await this.parseTodaysPunches(this.page!);
                 console.log(`[${this.getName()}] ✅ LOGIN SUCCESSFUL`);
                 return {
                     success: true,
                     message: 'Login successful - attendance marked',
-                    timestamp: new Date()
+                    timestamp: new Date(),
+                    actualInTime: updatedPunchData.inTime
                 };
             } else {
                 console.log(`[${this.getName()}] ❌ LOGIN VERIFICATION FAILED`);
@@ -473,7 +486,8 @@ export class AkriviaProvider extends BaseAttendanceProvider {
                 return {
                     success: true,
                     message: `Already logged out today at ${punchData.outTime}`,
-                    timestamp: new Date()
+                    timestamp: new Date(),
+                    actualOutTime: punchData.outTime
                 };
             }
 
@@ -486,11 +500,14 @@ export class AkriviaProvider extends BaseAttendanceProvider {
             const verified = await this.verifyPunchSuccess('logout');
 
             if (verified) {
+                // Re-parse to get the actual time that was just punched
+                const updatedPunchData = await this.parseTodaysPunches(this.page!);
                 console.log(`[${this.getName()}] ✅ LOGOUT SUCCESSFUL`);
                 return {
                     success: true,
                     message: 'Logout successful - attendance marked',
-                    timestamp: new Date()
+                    timestamp: new Date(),
+                    actualOutTime: updatedPunchData.outTime
                 };
             } else {
                 console.log(`[${this.getName()}] ❌ LOGOUT VERIFICATION FAILED`);

@@ -46,12 +46,13 @@ export async function executeAttendanceAction(
 
             // Check if action succeeded
             const success = action === 'login' ? lastResult.log_in : lastResult.log_out;
+            const actualTime = action === 'login' ? lastResult.actualInTime : lastResult.actualOutTime;
 
             if (success) {
                 console.log(`[Executor] ✓ ${action} succeeded for user ${user.id} on attempt ${attempt}`);
 
-                // Update user status with success
-                await updateUserStatus(user.id, action, true);
+                // Update user status with success and actual time
+                await updateUserStatus(user.id, action, true, undefined, actualTime);
 
                 return lastResult;
             } else {

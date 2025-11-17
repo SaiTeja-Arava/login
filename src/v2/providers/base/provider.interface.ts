@@ -20,6 +20,8 @@ export interface LoginResult {
     success: boolean;
     message?: string;
     timestamp: Date;
+    /** Actual "In time" scraped from the attendance system (e.g., "12:15 PM") */
+    actualInTime?: string;
 }
 
 /**
@@ -29,6 +31,8 @@ export interface LogoutResult {
     success: boolean;
     message?: string;
     timestamp: Date;
+    /** Actual "Out time" scraped from the attendance system (e.g., "7:30 PM") */
+    actualOutTime?: string;
 }
 
 /**
