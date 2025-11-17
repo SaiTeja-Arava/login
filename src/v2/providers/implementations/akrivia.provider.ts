@@ -111,14 +111,17 @@ export class AkriviaProvider extends BaseAttendanceProvider {
                 // Find all shift content sets (In time and Out time)
                 const contentSets = todaySection.querySelectorAll('.ah-shift-content-set');
 
-                let inTime = '—';
-                let outTime = '—';
+                let inTime = '';
+                let outTime = '';
 
                 // First set is In time
                 if (contentSets[0]) {
                     const inTimeEl = contentSets[0].querySelector('.ah-time .val-text');
                     if (inTimeEl) {
-                        inTime = inTimeEl.textContent?.trim() || '—';
+                        inTime = inTimeEl.textContent?.trim();
+                    } else {
+                        console.log(`[${this.getName()}] In time element not found`);
+                        throw new Error("In time element not found");
                     }
                 }
 
@@ -126,7 +129,10 @@ export class AkriviaProvider extends BaseAttendanceProvider {
                 if (contentSets[1]) {
                     const outTimeEl = contentSets[1].querySelector('.ah-time .val-text');
                     if (outTimeEl) {
-                        outTime = outTimeEl.textContent?.trim() || '—';
+                        outTime = outTimeEl.textContent?.trim();
+                    } else {
+                        console.log(`[${this.getName()}] Out time element not found`);
+                        throw new Error("Out time element not found");
                     }
                 }
 
@@ -492,7 +498,7 @@ export class AkriviaProvider extends BaseAttendanceProvider {
             }
 
             console.log(`[${this.getName()}] Not logged out yet - Out time is: "${punchData.outTime}"`);
-
+            await new Promise(resolve => setTimeout(resolve, 1000));
             // Execute check-out action
             await this.executeCheckAction();
 
