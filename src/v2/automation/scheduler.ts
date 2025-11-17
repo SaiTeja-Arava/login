@@ -8,9 +8,9 @@
 import * as cron from 'node-cron';
 import { processAttendanceQueue } from './attendance.automation';
 import { AUTOMATION_CONFIG } from '../config/constants';
+import { acquireLock, releaseLock, getLockStatus } from '../utils/execution-lock.util';
 
 let scheduledTask: cron.ScheduledTask | null = null;
-let isRunning = false;
 
 /**
  * Start the attendance automation scheduler
@@ -45,14 +45,13 @@ export function startScheduler(): void {
 
     // Create the cron job
     scheduledTask = cron.schedule(AUTOMATION_CONFIG.CRON_SCHEDULE, async () => {
-        // Prevent concurrent executions
-        if (isRunning) {
-            console.log('[Scheduler] Previous execution still running, skipping this cycle');
+        // Try to acquire the lock
+        if (!acquireLock('cron')) {
+            console.log('[Scheduler] Skipping cycle - attendance processing already in progress (manual trigger)');
             return;
         }
 
         try {
-            isRunning = true;
             console.log(`[Scheduler] Triggered at ${new Date().toISOString()}`);
 
             // Process the attendance queue
@@ -61,7 +60,8 @@ export function startScheduler(): void {
         } catch (error) {
             console.error('[Scheduler] Error during execution:', error);
         } finally {
-            isRunning = false;
+            // Always release the lock
+            releaseLock();
         }
     });
 
@@ -95,9 +95,10 @@ export function stopScheduler(): void {
  * @returns {object} Status information
  */
 export function getSchedulerStatus(): { running: boolean; executing: boolean; schedule: string } {
+    const lockStatus = getLockStatus();
     return {
         running: scheduledTask !== null,
-        executing: isRunning,
+        executing: lockStatus.locked && lockStatus.source === 'cron',
         schedule: AUTOMATION_CONFIG.CRON_SCHEDULE
     };
 }

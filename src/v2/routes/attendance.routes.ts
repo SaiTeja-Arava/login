@@ -5,7 +5,7 @@
  */
 
 import { Router } from 'express';
-import { getLogsController, manualTriggerController } from '../controllers/attendance.controller';
+import { getLogsController, manualTriggerController, getExecutionStatusController } from '../controllers/attendance.controller';
 
 const router = Router();
 
@@ -18,6 +18,15 @@ const router = Router();
  * - limit (optional): Maximum number of logs to return (default: 100, max: 1000)
  */
 router.get('/logs', getLogsController);
+
+/**
+ * GET /api/v2/attendance/status
+ * Get current execution status
+ * 
+ * Returns whether attendance automation is currently running,
+ * and if so, which source initiated it (cron or manual).
+ */
+router.get('/status', getExecutionStatusController);
 
 /**
  * POST /api/v2/attendance/trigger

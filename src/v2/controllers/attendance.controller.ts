@@ -9,6 +9,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { getAttendanceLogs } from '../services/attendance.service';
 import { processAttendanceQueue } from '../automation/attendance.automation';
+import { acquireLock, releaseLock, isLocked, getLockStatus, getLockStatusForAPI } from '../utils/execution-lock.util';
 
 /**
  * Get attendance logs with optional filtering
@@ -67,23 +68,85 @@ export async function manualTriggerController(
     try {
         console.log('[Controller] Manual trigger requested');
 
-        // Send immediate response
+        // Check if attendance processing is already in progress
+        if (isLocked()) {
+            const lockStatus = getLockStatus();
+            console.log(`[Controller] Manual trigger REJECTED - already locked by ${lockStatus.source}`);
+
+            res.status(409).json({
+                success: false,
+                error: 'Attendance processing already in progress',
+                message: `Cannot trigger: attendance automation is currently being executed by ${lockStatus.source}`,
+                lockedBy: lockStatus.source,
+                startedAt: lockStatus.startTime?.toISOString()
+            });
+            return;
+        }
+
+        // Try to acquire the lock
+        if (!acquireLock('manual')) {
+            // Race condition - lock was acquired between the check and acquisition attempt
+            const lockStatus = getLockStatus();
+            console.log(`[Controller] Manual trigger REJECTED - lock acquired by ${lockStatus.source} during race`);
+
+            res.status(409).json({
+                success: false,
+                error: 'Attendance processing already in progress',
+                message: 'Another process started execution just before this request',
+                lockedBy: lockStatus.source,
+                startedAt: lockStatus.startTime?.toISOString()
+            });
+            return;
+        }
+
+        // Lock acquired successfully - send immediate response
+        console.log('[Controller] Manual trigger ACCEPTED - lock acquired');
         res.status(202).json({
             success: true,
-            message: 'Attendance automation triggered. Processing in background.'
+            message: 'Attendance automation triggered successfully. Processing in background.',
+            startedAt: new Date().toISOString()
         });
 
-        // Process queue asynchronously (don't await)
-        processAttendanceQueue()
-            .then(() => {
-                console.log('[Controller] Manual trigger completed successfully');
-            })
-            .catch((error) => {
-                console.error('[Controller] Manual trigger failed:', error);
-            });
+        // Process queue asynchronously
+        try {
+            await processAttendanceQueue();
+            console.log('[Controller] Manual trigger completed successfully');
+        } catch (error) {
+            console.error('[Controller] Manual trigger failed:', error);
+        } finally {
+            // Always release the lock
+            releaseLock();
+        }
 
     } catch (error) {
         console.error('[Controller] Error triggering attendance automation:', error);
+        next(error);
+    }
+}
+
+/**
+ * Get current execution status
+ * 
+ * Returns whether attendance automation is currently executing,
+ * and if so, by which source (cron or manual).
+ * 
+ * @route GET /api/v2/attendance/status
+ */
+export async function getExecutionStatusController(
+    req: Request,
+    res: Response,
+    next: NextFunction
+): Promise<void> {
+    try {
+        const status = getLockStatusForAPI();
+
+        res.status(200).json({
+            success: true,
+            ...status
+        });
+
+    } catch (error) {
+        console.error('[Controller] Error getting execution status:', error);
         next(error);
     }
 }

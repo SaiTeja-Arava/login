@@ -341,11 +341,34 @@ async function deleteUser(id) {
 
 async function handleManualTrigger() {
     try {
+        // First check if automation is already running
+        showMessage('Checking execution status...', 'info');
+
+        const statusResponse = await fetch(`${API_BASE_URL}/attendance/status`);
+        if (statusResponse.ok) {
+            const statusData = await statusResponse.json();
+
+            if (statusData.executing) {
+                const source = statusData.source === 'cron' ? 'scheduled cron job' : 'another manual trigger';
+                showMessage(`⚠️ Cannot trigger: Attendance automation is already running (started by ${source})`, 'warning');
+                return;
+            }
+        }
+
+        // Proceed with triggering
         showMessage('Triggering attendance automation...', 'info');
 
         const response = await fetch(`${API_BASE_URL}/attendance/trigger`, {
             method: 'POST'
         });
+
+        // Handle 409 Conflict (automation already in progress)
+        if (response.status === 409) {
+            const errorData = await response.json();
+            const source = errorData.lockedBy === 'cron' ? 'scheduled cron job' : 'another manual trigger';
+            showMessage(`⚠️ ${errorData.error}: Started by ${source}`, 'warning');
+            return;
+        }
 
         if (!response.ok) {
             throw new Error('Failed to trigger automation');
