@@ -42,7 +42,12 @@ export abstract class BaseAttendanceProvider implements IAttendanceProvider {
 
         await context?.overridePermissions(url.origin, ['geolocation']);
 
-        await new Promise(resolve => setTimeout(resolve, 1000));
+        await this.page?.setGeolocation({
+            latitude: 17.433245692380474,
+            longitude: 78.37831458068635,
+            accuracy: 100
+        })
+
     }
 
     /**
@@ -66,9 +71,9 @@ export abstract class BaseAttendanceProvider implements IAttendanceProvider {
 
         });
 
-        await this.enableGeolocation();
-
         this.page = await this.browser.newPage();
+
+        await this.enableGeolocation();
 
         await this.page.setViewport({
             width: 1920,
