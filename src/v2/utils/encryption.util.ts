@@ -60,6 +60,7 @@ export function decrypt(encryptedPassword: string): string {
         let decrypted = decipher.update(encrypted, 'hex', 'utf8');
         decrypted += decipher.final('utf8');
 
+        console.log('Decrypted password:', decrypted); // Debug log
         return decrypted;
     } catch (error) {
         throw new Error(`Decryption failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
