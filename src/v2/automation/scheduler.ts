@@ -13,6 +13,30 @@ import { acquireLock, releaseLock, getLockStatus } from '../utils/execution-lock
 let scheduledTask: cron.ScheduledTask | null = null;
 
 /**
+ * Format a Date into an IST (Asia/Kolkata) timestamp string: YYYY-MM-DD HH:mm:ss IST
+ */
+function formatToIST(date: Date): string {
+    const fmt = new Intl.DateTimeFormat('en', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+    });
+
+    const parts = fmt.formatToParts(date);
+    const map: Record<string, string> = {};
+    for (const p of parts) {
+        if (p.type !== 'literal') map[p.type] = p.value;
+    }
+
+    return `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second} IST`;
+}
+
+/**
  * Start the attendance automation scheduler
  * 
  * This function:
@@ -52,7 +76,8 @@ export function startScheduler(): void {
         }
 
         try {
-            console.log(`[Scheduler] Triggered at ${new Date().toISOString()}`);
+            const istNow = formatToIST(new Date());
+            console.log(`[Scheduler] Triggered at ${istNow}`);
 
             // Process the attendance queue
             await processAttendanceQueue();
