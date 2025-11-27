@@ -77,7 +77,7 @@ export function startScheduler(): void {
 
         try {
             const istNow = formatToIST(new Date());
-            console.log(`[Scheduler] Triggered at ${istNow}`);
+            console.log(`[Scheduler] Triggered at IST Time  ${istNow}`);
 
             // Process the attendance queue
             await processAttendanceQueue();
