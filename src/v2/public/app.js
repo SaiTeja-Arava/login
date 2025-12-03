@@ -1,8 +1,6 @@
 // State management
 let currentUser = null;
 let isEditMode = false;
-let isPasswordVisible = false;
-let actualPassword = '';
 let allLogs = [];
 let filteredLogs = [];
 
@@ -27,11 +25,9 @@ const newUserBtn = document.getElementById('newUserBtn');
 
 // User details elements
 const detailUserId = document.getElementById('detailUserId');
-const detailPassword = document.getElementById('detailPassword');
 const detailLoginTime = document.getElementById('detailLoginTime');
 const detailLogoutTime = document.getElementById('detailLogoutTime');
 const detailWeekdays = document.getElementById('detailWeekdays');
-const togglePasswordBtn = document.getElementById('togglePasswordBtn');
 const editBtn = document.getElementById('editBtn');
 const deleteBtn = document.getElementById('deleteBtn');
 const clearDetailsBtn = document.getElementById('clearDetailsBtn');
@@ -43,7 +39,6 @@ const formUserId = document.getElementById('formUserId');
 const formPassword = document.getElementById('formPassword');
 const formLoginTime = document.getElementById('formLoginTime');
 const formLogoutTime = document.getElementById('formLogoutTime');
-const toggleFormPasswordBtn = document.getElementById('toggleFormPasswordBtn');
 const saveBtn = document.getElementById('saveBtn');
 const cancelBtn = document.getElementById('cancelBtn');
 
@@ -107,15 +102,12 @@ function showUserDetails(user) {
     clearBtn.classList.remove('hidden');
 
     currentUser = user;
-    actualPassword = user.password;
-    isPasswordVisible = false;
+    currentUser = user;
 
     detailUserId.textContent = user.id;
-    detailPassword.textContent = '••••••••';
     detailLoginTime.textContent = user.loginTime;
     detailLogoutTime.textContent = user.logoutTime;
     detailWeekdays.textContent = user.weekdays.map(d => weekdayNames[d]).join(', ');
-    togglePasswordBtn.textContent = '👁 Show';
 
     // Display today's status if available
     if (user.todayStatus) {
@@ -183,7 +175,8 @@ function showUserForm(user = null) {
         formTitle.textContent = 'Edit User';
         formUserId.value = user.id;
         formUserId.disabled = true;
-        formPassword.value = user.password;
+        // Password field cleared - user must provide a new password when editing
+        formPassword.value = '';
         formLoginTime.value = user.loginTime;
         formLogoutTime.value = user.logoutTime;
 
@@ -530,14 +523,9 @@ function handleCancelDelete() {
 }
 
 function handleTogglePassword() {
-    isPasswordVisible = !isPasswordVisible;
-    if (isPasswordVisible) {
-        detailPassword.textContent = actualPassword;
-        togglePasswordBtn.textContent = '👁 Hide';
-    } else {
-        detailPassword.textContent = '••••••••';
-        togglePasswordBtn.textContent = '👁 Show';
-    }
+    // Password reveal has been disabled in the UI; this handler is retained
+    // as a no-op for safety if any stray references remain.
+    return;
 }
 
 function handleToggleFormPassword() {
@@ -636,12 +624,12 @@ searchInput.addEventListener('keypress', (e) => {
 clearBtn.addEventListener('click', handleClear);
 newUserBtn.addEventListener('click', handleNewUser);
 
-togglePasswordBtn.addEventListener('click', handleTogglePassword);
+// Password reveal button removed from DOM. Keep no-op handler but do not
+// attach it to any element to avoid accidental password exposure.
 editBtn.addEventListener('click', handleEdit);
 deleteBtn.addEventListener('click', handleDelete);
 clearDetailsBtn.addEventListener('click', handleClear);
 
-toggleFormPasswordBtn.addEventListener('click', handleToggleFormPassword);
 userForm.addEventListener('submit', handleFormSubmit);
 cancelBtn.addEventListener('click', handleCancel);
 
