@@ -91,12 +91,15 @@ app.get('/logs/:app', (req, res) => {
         if (fs.existsSync(outLogFile)) {
             try {
                 const content = fs.readFileSync(outLogFile, 'utf-8');
-                const lines = content.split('\n').slice(-10000); // Last 150 lines
+                const lines = content.split('\n').slice(-10000); // Last 10000 lines (~1 minute)
                 logs += lines.join('\n');
             } catch (e) {
                 logs += `\nError reading output logs: ${e.message}`;
             }
         }
+
+        // Get current time in IST
+        const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
 
         res.send(`<!DOCTYPE html>
 <html>
@@ -108,24 +111,27 @@ app.get('/logs/:app', (req, res) => {
         .container { max-width: 1400px; margin: 0 auto; }
         .header { color: #4ec9b0; margin-bottom: 20px; }
         .header h2 { margin: 0 0 10px 0; font-size: 24px; }
-        .controls { margin-bottom: 15px; }
+        .controls { margin-bottom: 15px; display: flex; gap: 10px; align-items: center; }
         a { color: #569cd6; text-decoration: none; padding: 8px 12px; background: #2d2d30; border-radius: 3px; display: inline-block; }
         a:hover { background: #3e3e42; }
-        pre { 
-            background: #252526; 
-            padding: 15px; 
-            border-radius: 5px; 
-            max-height: 800px; 
-            overflow: auto; 
-            border: 1px solid #3e3e42;
-            line-height: 1.5;
-        }
-        .timestamp { color: #858585; }
+        button { color: #d4d4d4; background: #2d2d30; border: 1px solid #3e3e42; padding: 8px 12px; border-radius: 3px; cursor: pointer; }
+        button:hover { background: #3e3e42; }
+        .timestamp { color: #858585; font-size: 12px; }
         .info { color: #4ec9b0; }
         .success { color: #28a745; }
         .error { color: #f48771; }
         .warning { color: #dcdcaa; }
     </style>
+    <script>
+        function copyLogs() {
+            const logsText = document.getElementById('logsContent').innerText;
+            navigator.clipboard.writeText(logsText).then(() => {
+                alert('Logs copied to clipboard!');
+            }).catch(() => {
+                alert('Failed to copy logs');
+            });
+        }
+    </script>
 </head>
 <body>
     <div class="container">
@@ -133,10 +139,12 @@ app.get('/logs/:app', (req, res) => {
             <h2>📋 Attendance Manager Live Logs</h2>
             <div class="controls">
                 <a href="/">← Back to Dashboard</a>
-                <span style="color: #858585; margin-left: 20px;">Auto-refreshing every 60 seconds...</span>
+                <button onclick="copyLogs()">📋 Copy Logs</button>
+                <span class="timestamp">Last updated: ${now} IST</span>
+                <span style="color: #858585; margin-left: auto;">Auto-refreshing every 60 seconds...</span>
             </div>
         </div>
-        <pre>${logs.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
+        <pre id="logsContent">${logs.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</pre>
     </div>
 </body>
 </html>`);
