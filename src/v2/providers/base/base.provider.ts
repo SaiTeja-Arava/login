@@ -65,9 +65,16 @@ export abstract class BaseAttendanceProvider implements IAttendanceProvider {
         console.log(`[${this.getName()}] Initializing browser...`);
 
         this.browser = await puppeteer.launch({
-            headless: this.config.headless,
+            headless: 'new', // Use new headless mode to prevent window opening
             executablePath: chromePath,
-            args: ['--no-sandbox', '--disable-setuid-sandbox',],
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-default-browser-check',
+                '--disable-dev-shm-usage'
+            ],
 
         });
 
