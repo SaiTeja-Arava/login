@@ -86,12 +86,15 @@ app.get('/logs/:app', (req, res) => {
         const errorLogFile = path.join(pm2Logs, `${appName}-error.log`);
 
         let logs = '';
+        let lineCount = 0;
         
         // Read output logs
         if (fs.existsSync(outLogFile)) {
             try {
                 const content = fs.readFileSync(outLogFile, 'utf-8');
-                const lines = content.split('\n').slice(-10000); // Last 10000 lines (~1 minute)
+                const allLines = content.split('\n');
+                const lines = allLines.slice(-50000); // Last 50000 lines
+                lineCount = lines.length;
                 logs += lines.join('\n');
             } catch (e) {
                 logs += `\nError reading output logs: ${e.message}`;
@@ -117,7 +120,16 @@ app.get('/logs/:app', (req, res) => {
         button { color: #d4d4d4; background: #2d2d30; border: 1px solid #3e3e42; padding: 8px 12px; border-radius: 3px; cursor: pointer; }
         button:hover { background: #3e3e42; }
         .timestamp { color: #858585; font-size: 12px; }
-        .info { color: #4ec9b0; }
+        pre { 
+            background: #252526; 
+            padding: 15px; 
+            border-radius: 5px; 
+            overflow-x: auto; 
+            border: 1px solid #3e3e42;
+            line-height: 1.5;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
         .success { color: #28a745; }
         .error { color: #f48771; }
         .warning { color: #dcdcaa; }
@@ -140,7 +152,7 @@ app.get('/logs/:app', (req, res) => {
             <div class="controls">
                 <a href="/">← Back to Dashboard</a>
                 <button onclick="copyLogs()">📋 Copy Logs</button>
-                <span class="timestamp">Last updated: ${now} IST</span>
+                <span class="timestamp">Last updated: ${now} IST | Lines: ${lineCount}</span>
                 <span style="color: #858585; margin-left: auto;">Auto-refreshing every 60 seconds...</span>
             </div>
         </div>
