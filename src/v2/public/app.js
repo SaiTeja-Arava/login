@@ -579,9 +579,9 @@ function handleFormSubmit(e) {
         errors.push('Logout time is required');
     }
 
-    if (weekdays.length === 0) {
-        errors.push('At least one weekday must be selected');
-    }
+    // if (weekdays.length === 0) {
+    //     errors.push('At least one weekday must be selected');
+    // }
 
     // Check if logout time is after login time
     if (loginTime && logoutTime) {

@@ -81,10 +81,10 @@ export function validateWeekdays(weekdays: number[]): string[] {
         return errors;
     }
 
-    if (weekdays.length === 0) {
-        errors.push('At least one weekday must be selected');
-        return errors;
-    }
+    // if (weekdays.length === 0) {
+    //     errors.push('At least one weekday must be selected');
+    //     return errors;
+    // }
 
     // Check if all values are between 1 and 7
     const invalidDays = weekdays.filter(day => day < 1 || day > 7);
