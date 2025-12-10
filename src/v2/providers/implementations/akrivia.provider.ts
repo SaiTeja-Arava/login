@@ -71,57 +71,46 @@ export class AkriviaProvider extends BaseAttendanceProvider {
 
             console.log(`[${this.getName()}] Parsing today's punches from punch card...`);
 
-            // Extract HTML content
-            const cardHtml = await page.evaluate((selector) => {
-                const element = document.querySelector(selector);
-                return element ? element.innerHTML : '';
-            }, this.SELECTORS.punchCard);
-
-            if (!cardHtml) {
-                throw new Error('Punch card HTML not found');
-            }
-
-            // Parse the HTML to find today's section
-            // Look for "Today, November 16, 2025" or similar
-            const today = new Date();
-            const monthNames = ["January", "February", "March", "April", "May", "June",
-                "July", "August", "September", "October", "November", "December"];
-            const todayPattern = `Today, ${monthNames[today.getMonth()]} ${today.getDate()}, ${today.getFullYear()}`;
-
-            console.log(`[${this.getName()}] Looking for date pattern: ${todayPattern}`);
-
             // Extract punch times using DOM manipulation in page context
             const punchData = await page.evaluate((punchCardSelector) => {
                 const punchCard = document.querySelector(punchCardSelector);
                 if (!punchCard) {
-                    console.log(`[${this.getName()}] Punch card element not found during evaluation`);
                     throw new Error('Punch card element not found during evaluation');
                 }
 
                 // Find all shift data sections
                 const shiftDataElements = punchCard.querySelectorAll('.ah-shift-data');
 
-                // Get the first one (today's data)
-                const todaySection = shiftDataElements[0];
-                if (!todaySection) {
-                    console.log(`[${this.getName()}] Today's shift data section not found`);
-                    throw new Error("Today's shift data section not found");
+                // Get the first section (usually Today or Yesterday)
+                const firstSection = shiftDataElements[0];
+                if (!firstSection) {
+                    console.log('No shift data sections found');
+                    return { inTime: '—', outTime: '—', dateFound: 'NONE', isToday: false };
+                }
+
+                // Verify if this section is for "Today"
+                // Robust check: Just look for the word "Today" regardless of date format
+                const dateHeader = firstSection.querySelector('.ah-shift-data-head .data');
+                const dateText = dateHeader ? dateHeader.textContent?.trim() : '';
+                const isToday = dateText ? dateText.toLowerCase().includes('today') : false;
+                
+                if (!isToday) {
+                    // If the first card isn't "Today", then today's card hasn't been created yet
+                    // (e.g., very early morning or holiday view)
+                    return { inTime: '—', outTime: '—', dateFound: dateText, isToday: false };
                 }
 
                 // Find all shift content sets (In time and Out time)
-                const contentSets = todaySection.querySelectorAll('.ah-shift-content-set');
+                const contentSets = firstSection.querySelectorAll('.ah-shift-content-set');
 
-                let inTime = '';
-                let outTime = '';
+                let inTime = '—';
+                let outTime = '—';
 
                 // First set is In time
                 if (contentSets[0]) {
                     const inTimeEl = contentSets[0].querySelector('.ah-time .val-text');
                     if (inTimeEl) {
-                        inTime = inTimeEl.textContent?.trim();
-                    } else {
-                        console.log(`[${this.getName()}] In time element not found`);
-                        throw new Error("In time element not found");
+                        inTime = inTimeEl.textContent?.trim() || '—';
                     }
                 }
 
@@ -129,19 +118,20 @@ export class AkriviaProvider extends BaseAttendanceProvider {
                 if (contentSets[1]) {
                     const outTimeEl = contentSets[1].querySelector('.ah-time .val-text');
                     if (outTimeEl) {
-                        outTime = outTimeEl.textContent?.trim();
-                    } else {
-                        console.log(`[${this.getName()}] Out time element not found`);
-                        throw new Error("Out time element not found");
+                        outTime = outTimeEl.textContent?.trim() || '—';
                     }
                 }
 
-                return { inTime, outTime };
+                return { inTime, outTime, dateFound: dateText, isToday: true };
             }, this.SELECTORS.punchCard);
 
-            console.log(`[${this.getName()}] Parsed punch data - In: "${punchData.inTime}", Out: "${punchData.outTime}"`);
+            if (!punchData.isToday) {
+                console.log(`[${this.getName()}] First card is NOT today (Found: "${punchData.dateFound}"). Assuming no punches for today.`);
+            } else {
+                console.log(`[${this.getName()}] Parsed data for "${punchData.dateFound}" - In: "${punchData.inTime}", Out: "${punchData.outTime}"`);
+            }
 
-            return punchData;
+            return { inTime: punchData.inTime, outTime: punchData.outTime };
 
         } catch (error) {
             console.error(`[${this.getName()}] Error parsing punches:`, error);
@@ -309,7 +299,7 @@ export class AkriviaProvider extends BaseAttendanceProvider {
         await this.page!.click(this.SELECTORS.confirmButton);
 
         // Wait for modal to close
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        await new Promise(resolve => setTimeout(resolve, 5000));
     }
 
     /**
