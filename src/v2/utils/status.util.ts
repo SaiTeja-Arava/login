@@ -7,34 +7,39 @@
  */
 
 import { TodayStatus, User } from '../models/user.model';
-import { getCurrentDate } from './time.util';
+import { getCurrentDate, randomizeTime } from './time.util';
+import { AUTOMATION_CONFIG } from '../config/constants';
 
 /**
  * Creates a fresh TodayStatus object for a new day
  * All counters set to 0, all success flags set to false
+ * Generates randomized execution times for the day
  * 
  * @param {string} date - The date in YYYY-MM-DD format
- * @returns {TodayStatus} Fresh status object
- * 
- * @example
- * getInitialTodayStatus("2025-11-16")
- * // Returns: {
- * //   date: "2025-11-16",
- * //   loginAttempts: 0,
- * //   loginSuccess: false,
- * //   logoutAttempts: 0,
- * //   logoutSuccess: false
- * // }
+ * @param {User} user - The user object (needed for scheduled times)
+ * @returns {TodayStatus} Fresh status object with randomized times
  */
-export function getInitialTodayStatus(date: string): TodayStatus {
+export function getInitialTodayStatus(date: string, user: User): TodayStatus {
+    const window = AUTOMATION_CONFIG.TIME_WINDOW_MINUTES;
+
+    // Calculate randomized times based on user's scheduled times and the config window
+    const randomizedLogin = randomizeTime(user.loginTime, window);
+    const randomizedLogout = randomizeTime(user.logoutTime, window);
+
+    console.log(`[Status] Generated random times for user ${user.id} on ${date}: Login ${user.loginTime} -> ${randomizedLogin}, Logout ${user.logoutTime} -> ${randomizedLogout}`);
+
     return {
         date: date,
         loginAttempts: 0,
         loginSuccess: false,
         loginTime: undefined,
+        randomizedLoginTime: randomizedLogin,
+        actualInTime: undefined,
         logoutAttempts: 0,
         logoutSuccess: false,
         logoutTime: undefined,
+        randomizedLogoutTime: randomizedLogout,
+        actualOutTime: undefined,
         lastError: undefined
     };
 }
@@ -49,11 +54,6 @@ export function getInitialTodayStatus(date: string): TodayStatus {
  * @param {string} currentDate - Current date in YYYY-MM-DD format
  * @param {string} [statusDate] - Date from todayStatus (optional)
  * @returns {boolean} True if reset is needed
- * 
- * @example
- * shouldResetStatus("2025-11-16", "2025-11-15") // Returns true (different dates)
- * shouldResetStatus("2025-11-16", "2025-11-16") // Returns false (same date)
- * shouldResetStatus("2025-11-16", undefined)    // Returns true (no date)
  */
 export function shouldResetStatus(
     currentDate: string,
@@ -78,17 +78,6 @@ export function shouldResetStatus(
  * @param {User} user - The user whose status to check/reset
  * @param {string} currentDate - Current date in YYYY-MM-DD format
  * @returns {User} User with updated status (if reset was needed)
- * 
- * @example
- * const user = {
- *   id: "1188",
- *   // ... other fields
- *   todayStatus: { date: "2025-11-15", loginSuccess: true, ... }
- * };
- * 
- * const updatedUser = resetUserStatusIfNeeded(user, "2025-11-16");
- * // updatedUser.todayStatus.date === "2025-11-16"
- * // updatedUser.todayStatus.loginSuccess === false (reset)
  */
 export function resetUserStatusIfNeeded(
     user: User,
@@ -99,7 +88,7 @@ export function resetUserStatusIfNeeded(
         // Create new user object with reset status
         return {
             ...user,
-            todayStatus: getInitialTodayStatus(currentDate)
+            todayStatus: getInitialTodayStatus(currentDate, user)
         };
     }
 
@@ -155,11 +144,11 @@ export function updateActionStatus(
 ): User {
     // Ensure user has todayStatus
     const currentDate = getCurrentDate();
-    const currentStatus = user.todayStatus || getInitialTodayStatus(currentDate);
+    const currentStatus = user.todayStatus || getInitialTodayStatus(currentDate, user); // Pass user here
 
     // Reset status if date changed
     const status = shouldResetStatus(currentDate, currentStatus.date)
-        ? getInitialTodayStatus(currentDate)
+        ? getInitialTodayStatus(currentDate, user) // Pass user here
         : currentStatus;
 
     // Create updated status based on action type

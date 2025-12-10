@@ -73,27 +73,31 @@ export async function getEligibleUsers(
                 continue;
             }
 
+            // Use the randomized time if available, otherwise fall back to the scheduled time
+            const targetLoginTime = user.todayStatus?.randomizedLoginTime || user.loginTime;
+            const targetLogoutTime = user.todayStatus?.randomizedLogoutTime || user.logoutTime;
+
             // Check login eligibility with extended retry window
             // Strategy: Keep trying until successful or until emergency logout window starts
             const needsLogin =
                 !user.todayStatus?.loginSuccess && // Not logged in yet
                 currentTime < AUTOMATION_CONFIG.EMERGENCY_LOGOUT_START && // Before emergency window (still reasonable time to login)
                 (
-                    // Normal window: scheduled time ±6 minutes
-                    isWithinTimeWindow(currentTime, user.loginTime, AUTOMATION_CONFIG.TIME_WINDOW_MINUTES) ||
+                    // Normal window: check +/- 2 minutes around the specific randomized target time
+                    isWithinTimeWindow(currentTime, targetLoginTime, 2) ||
 
                     // Extended retry window: up to 2 hours after scheduled time with attempt limit
                     (
-                        isAfterScheduledTime(currentTime, user.loginTime) &&
-                        isWithinHoursAfter(currentTime, user.loginTime, AUTOMATION_CONFIG.EXTENDED_RETRY_HOURS) &&
+                        isAfterScheduledTime(currentTime, targetLoginTime) &&
+                        isWithinHoursAfter(currentTime, targetLoginTime, AUTOMATION_CONFIG.EXTENDED_RETRY_HOURS) &&
                         (user.todayStatus?.loginAttempts || 0) < AUTOMATION_CONFIG.MAX_RETRY_ATTEMPTS
                     ) ||
 
                     // Continuous retry: After extended window expires, keep trying (no attempt limit)
                     // This ensures we NEVER miss a login as long as it's before emergency logout time
                     (
-                        isAfterScheduledTime(currentTime, user.loginTime) &&
-                        !isWithinHoursAfter(currentTime, user.loginTime, AUTOMATION_CONFIG.EXTENDED_RETRY_HOURS)
+                        isAfterScheduledTime(currentTime, targetLoginTime) &&
+                        !isWithinHoursAfter(currentTime, targetLoginTime, AUTOMATION_CONFIG.EXTENDED_RETRY_HOURS)
                     )
                 );
 
@@ -106,13 +110,13 @@ export async function getEligibleUsers(
             const needsLogout =
                 !user.todayStatus?.logoutSuccess && // Not logged out yet
                 (
-                    // Normal window: scheduled logout time ±6 minutes
-                    isWithinTimeWindow(currentTime, user.logoutTime, AUTOMATION_CONFIG.TIME_WINDOW_MINUTES) ||
+                    // Normal window: check +/- 2 minutes around the specific randomized target time
+                    isWithinTimeWindow(currentTime, targetLogoutTime, 2) ||
 
                     // Smart window: If logged in, allow logout anytime after scheduled time
                     (
                         user.todayStatus?.loginSuccess && // User has logged in today
-                        isAfterScheduledTime(currentTime, user.logoutTime) // After scheduled logout time
+                        isAfterScheduledTime(currentTime, targetLogoutTime) // After scheduled logout time
                     ) ||
 
                     // Emergency window: Even without login, try logout in emergency window

@@ -21,10 +21,12 @@ export interface TodayStatus {
     loginAttempts: number;
     loginSuccess: boolean;
     loginTime?: string;
+    randomizedLoginTime?: string;
     actualInTime?: string;
     logoutAttempts: number;
     logoutSuccess: boolean;
     logoutTime?: string;
+    randomizedLogoutTime?: string;
     actualOutTime?: string;
     lastError?: string;
 }

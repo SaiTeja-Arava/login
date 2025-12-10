@@ -278,6 +278,9 @@ function showUserForm(user = null) {
         formUserId.disabled = true;
         formLoginTime.value = user.loginTime;
         formLogoutTime.value = user.logoutTime;
+        
+        // Password is optional in edit mode
+        formPassword.removeAttribute('required');
 
         document.querySelectorAll('.weekday-checkbox').forEach(checkbox => {
             checkbox.checked = user.weekdays.includes(parseInt(checkbox.value));
@@ -287,6 +290,9 @@ function showUserForm(user = null) {
         formTitle.textContent = 'Add New User';
         formUserId.disabled = false;
         userForm.reset();
+        
+        // Password is required for new user
+        formPassword.setAttribute('required', 'true');
 
         if (searchInput.value.trim()) {
             formUserId.value = searchInput.value.trim();

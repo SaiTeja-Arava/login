@@ -92,6 +92,43 @@ export function getCurrentDayOfWeek(date: Date): number {
 }
 
 /**
+ * Randomizes a given HH:MM time within a specified minute window.
+ * 
+ * @param {string} baseTime - The central time in HH:MM format (e.g., "09:00").
+ * @param {number} windowMinutes - The +/- minute window (e.g., 6 for +/- 6 minutes).
+ * @returns {string} A new HH:MM time string, randomized within the window.
+ * 
+ * @example
+ * randomizeTime("09:00", 6) // Returns something like "08:58" or "09:04"
+ */
+export function randomizeTime(baseTime: string, windowMinutes: number): string {
+    try {
+        let baseMinutes = parseTime(baseTime); // Converts "HH:MM" to minutes since midnight
+
+        // Generate a random offset between -windowMinutes and +windowMinutes (inclusive)
+        const randomOffset = Math.floor(Math.random() * (2 * windowMinutes + 1)) - windowMinutes;
+        let randomizedMinutes = baseMinutes + randomOffset;
+
+        // Handle time wrap-around for midnight
+        // e.g., 00:05 - 10 minutes = 23:55 (1435 minutes)
+        if (randomizedMinutes < 0) {
+            randomizedMinutes += 1440; // Add 24 hours in minutes
+        } else if (randomizedMinutes >= 1440) {
+            randomizedMinutes -= 1440; // Subtract 24 hours in minutes
+        }
+
+        const hours = Math.floor(randomizedMinutes / 60);
+        const minutes = randomizedMinutes % 60;
+
+        return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+    } catch (error) {
+        console.error(`Error randomizing time for ${baseTime}: ${error}`);
+        // Fallback to baseTime on error to ensure a valid time is always returned
+        return baseTime;
+    }
+}
+
+/**
  * Checks if current time is within a time window of the target time
  * 
  * @param {string} currentTime - Current time in HH:MM format

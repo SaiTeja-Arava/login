@@ -121,10 +121,36 @@ export async function updateUser(id: string, userData: CreateUserRequest): Promi
         weekdays: userData.weekdays
     };
 
+    // Check if loginTime, logoutTime, or weekdays have changed
+    const originalUser = users[userIndex];
+    if (updatedUser.loginTime !== originalUser.loginTime ||
+        updatedUser.logoutTime !== originalUser.logoutTime ||
+        !arraysEqual(updatedUser.weekdays, originalUser.weekdays)) {
+        
+        // If any schedule-related field changed, clear randomized times to force recalculation on next daily reset
+        if (updatedUser.todayStatus) {
+            updatedUser.todayStatus.randomizedLoginTime = undefined;
+            updatedUser.todayStatus.randomizedLogoutTime = undefined;
+        }
+    }
+
     users[userIndex] = updatedUser;
     await writeUsersToFile(users);
 
     return updatedUser;
+}
+
+/**
+ * Helper function to compare two number arrays
+ */
+function arraysEqual(a: number[], b: number[]): boolean {
+    if (a.length !== b.length) return false;
+    const sortedA = [...a].sort((x, y) => x - y);
+    const sortedB = [...b].sort((x, y) => x - y);
+    for (let i = 0; i < sortedA.length; i++) {
+        if (sortedA[i] !== sortedB[i]) return false;
+    }
+    return true;
 }
 
 /**
