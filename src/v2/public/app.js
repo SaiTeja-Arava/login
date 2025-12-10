@@ -664,6 +664,15 @@ deleteModal.addEventListener('click', (e) => {
 // ==================== Initialization ====================
 
 document.addEventListener('DOMContentLoaded', () => {
+    // Check URL parameters for admin mode
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('admin') === 'true') {
+        const automationSection = document.getElementById('automationSection');
+        if (automationSection) {
+            automationSection.classList.remove('hidden');
+        }
+    }
+
     console.log('Attendance Login Manager loaded');
     showSearchSection();
 });
