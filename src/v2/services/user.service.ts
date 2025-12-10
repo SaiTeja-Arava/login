@@ -1,6 +1,6 @@
 import { User, CreateUserRequest } from '../models/user.model';
 import { encrypt, decrypt } from '../utils/encryption.util';
-import { validateUser } from '../utils/validation.util';
+import { validateUser, validateUserId, validatePassword, validateTimeRange, validateWeekdays } from '../utils/validation.util';
 import { readUsersFromFile, writeUsersToFile } from '../utils/file.util';
 
 /**
@@ -76,8 +76,20 @@ export async function createUser(userData: CreateUserRequest): Promise<User> {
  * @throws Error if user not found or validation fails
  */
 export async function updateUser(id: string, userData: CreateUserRequest): Promise<User> {
-    // Validate user data
-    const validationErrors = validateUser(userData);
+    // For updates, password can be optional. If empty, we keep the old one.
+    const isPasswordUpdate = userData.password && userData.password.length > 0;
+
+    // Manually validate fields since password can be optional on update
+    const validationErrors = [
+        ...validateUserId(userData.id),
+        ...validateWeekdays(userData.weekdays),
+        ...validateTimeRange(userData.loginTime, userData.logoutTime)
+    ];
+
+    if (isPasswordUpdate) {
+        validationErrors.push(...validatePassword(userData.password));
+    }
+
     if (validationErrors.length > 0) {
         const error = new Error('Validation failed');
         (error as any).statusCode = 400;
@@ -94,11 +106,14 @@ export async function updateUser(id: string, userData: CreateUserRequest): Promi
         throw error;
     }
 
-    // Encrypt password
-    const encryptedPassword = encrypt(userData.password);
+    // Encrypt password only if a new one is provided
+    const encryptedPassword = isPasswordUpdate
+        ? encrypt(userData.password)
+        : users[userIndex].password; // Keep old password
 
-    // Update user object
+    // Update user object, preserving existing fields like todayStatus
     const updatedUser: User = {
+        ...users[userIndex],
         id: id,
         password: encryptedPassword,
         loginTime: userData.loginTime,

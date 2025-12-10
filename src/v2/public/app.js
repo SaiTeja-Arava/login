@@ -1,3 +1,92 @@
+// ==================== Reactive Password Visibility ====================
+
+// Internal state for the reactive property
+let _showPasswordFeature = false;
+
+/**
+ * Updates all UI elements related to password visibility based on the current
+ * state of `window.SHOW_PASSWORD`. This is the single source of truth for
+ * password visibility changes.
+ */
+function updatePasswordVisibilityUI() {
+    const shouldShow = window.SHOW_PASSWORD;
+
+    // --- User Details View ---
+    if (togglePasswordBtn) {
+        togglePasswordBtn.classList.toggle('hidden', !shouldShow);
+
+        // If the password was visible and the feature is now turned off, hide it
+        if (isPasswordVisible && !shouldShow) {
+            isPasswordVisible = false;
+            detailPassword.textContent = '••••••••';
+            togglePasswordBtn.textContent = '👁 Show';
+        }
+    }
+
+    // --- User Form (Edit/Create) View ---
+    const formPasswordContainer = document.getElementById('formPassword')?.parentElement?.parentElement;
+    if (formPasswordContainer) {
+        if (isEditMode) {
+            // In EDIT mode, the whole password block can be hidden
+            formPasswordContainer.classList.toggle('hidden', !shouldShow);
+            if (shouldShow) {
+                formPassword.value = actualPassword || '';
+                formPassword.placeholder = 'Enter new password or leave blank';
+            } else {
+                formPassword.value = ''; // Ensure value is cleared when hidden to not submit it accidentally
+                formPassword.placeholder = 'Leave blank to keep current password';
+            }
+        } else {
+            // In CREATE mode, password is always required and visible
+            formPasswordContainer.classList.remove('hidden');
+            formPassword.value = '';
+            formPassword.placeholder = 'Enter password';
+        }
+    }
+}
+
+// Define the reactive 'SHOW_PASSWORD' property on the window object
+Object.defineProperty(window, 'SHOW_PASSWORD', {
+    get: function() {
+        return _showPasswordFeature;
+    },
+    set: function(value) {
+        const isTrue = !!value;
+        if (_showPasswordFeature !== isTrue) {
+            _showPasswordFeature = isTrue;
+            // When the value changes, trigger the UI update
+            updatePasswordVisibilityUI();
+        }
+    },
+    configurable: true // Allows re-definition for development
+});
+
+// ==================== Reactive Automation Controls Visibility ====================
+
+let _showAutomationControls = false;
+
+function updateAutomationControlsVisibility() {
+    const automationSection = document.getElementById('automationSection');
+    if (automationSection) {
+        automationSection.classList.toggle('hidden', !_showAutomationControls);
+    }
+}
+
+Object.defineProperty(window, 'SHOW_AUTOMATION_CONTROLS', {
+    get: function() {
+        return _showAutomationControls;
+    },
+    set: function(value) {
+        const isTrue = !!value;
+        if (_showAutomationControls !== isTrue) {
+            _showAutomationControls = isTrue;
+            updateAutomationControlsVisibility();
+        }
+    },
+    configurable: true
+});
+
+
 // State management
 let currentUser = null;
 let isEditMode = false;
@@ -107,7 +196,7 @@ function showUserDetails(user) {
     clearBtn.classList.remove('hidden');
 
     currentUser = user;
-    actualPassword = user.password;
+    actualPassword = user.password || ''; // Store password internally
     isPasswordVisible = false;
 
     detailUserId.textContent = user.id;
@@ -123,6 +212,9 @@ function showUserDetails(user) {
     } else {
         todayStatusSection.classList.add('hidden');
     }
+
+    // Set initial visibility state based on global setting
+    updatePasswordVisibilityUI();
 }
 
 function displayTodayStatus(status) {
@@ -179,30 +271,31 @@ function showUserForm(user = null) {
 
     isEditMode = !!user;
 
-    if (user) {
+    if (user) { // Edit mode
+        actualPassword = user.password || '';
         formTitle.textContent = 'Edit User';
         formUserId.value = user.id;
         formUserId.disabled = true;
-        formPassword.value = user.password;
         formLoginTime.value = user.loginTime;
         formLogoutTime.value = user.logoutTime;
 
-        // Check appropriate weekdays
         document.querySelectorAll('.weekday-checkbox').forEach(checkbox => {
             checkbox.checked = user.weekdays.includes(parseInt(checkbox.value));
         });
-    } else {
+    } else { // New user mode
+        actualPassword = ''; // No existing password for new user
         formTitle.textContent = 'Add New User';
         formUserId.disabled = false;
         userForm.reset();
 
-        // Pre-fill with search input if available
         if (searchInput.value.trim()) {
             formUserId.value = searchInput.value.trim();
         }
     }
 
     clearFormErrors();
+    // Set initial visibility state based on global setting
+    updatePasswordVisibilityUI();
 }
 
 function showMessage(message, type = 'success') {
@@ -567,8 +660,15 @@ function handleFormSubmit(e) {
         errors.push('User ID is required');
     }
 
-    if (!password || password.length < 6) {
-        errors.push('Password must be at least 6 characters long');
+    // Conditional password validation
+    if (!isEditMode) { // Creating a new user
+        if (!password || password.length < 6) {
+            errors.push('Password is required and must be at least 6 characters long');
+        }
+    } else { // Editing an existing user
+        if (password && password.length > 0 && password.length < 6) {
+            errors.push('New password must be at least 6 characters long');
+        }
     }
 
     if (!loginTime) {
@@ -664,15 +764,6 @@ deleteModal.addEventListener('click', (e) => {
 // ==================== Initialization ====================
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Check URL parameters for admin mode
-    const urlParams = new URLSearchParams(window.location.search);
-    if (urlParams.get('admin') === 'true') {
-        const automationSection = document.getElementById('automationSection');
-        if (automationSection) {
-            automationSection.classList.remove('hidden');
-        }
-    }
-
     console.log('Attendance Login Manager loaded');
     showSearchSection();
 });
