@@ -1,16 +1,19 @@
 /**
  * Akrivia HCM Provider
- * 
+ *
  * Implementation of attendance automation for Akrivia HCM system (Keus platform).
- * 
+ *
  * Features:
  * - Automatic login with credentials
  * - Navigate to attendance dashboard
  * - Parse today's punch data
  * - Smart check-in/check-out (skips if already done)
  * - Verification with retry logic
- * 
- * @see AKRIVIA_IMPLEMENTATION.md for detailed flow documentation
+ *
+ * NOTE (Nov 2026): Akrivia rewrote its web app (Angular -> React). The attendance
+ * dashboard no longer has stable ids (#check-in, #checkinRequest, app-root/... XPaths),
+ * so the attendance page is located by `data-slot` attributes + visible text instead.
+ * The login page ids (#emp_id, #password, #login) are unchanged.
  */
 
 import { Page } from 'puppeteer';
@@ -26,6 +29,21 @@ interface PunchData {
     outTime: string;
 }
 
+/**
+ * Snapshot of the "Attendance logs" card on the attendance dashboard
+ */
+interface AttendanceCardSnapshot {
+    /** Whether the "Attendance logs" card exists on the page */
+    cardFound: boolean;
+    /** Day rows (Today, Yesterday) - empty while the card is still showing skeletons */
+    rows: { heading: string; inTime: string; outTime: string }[];
+    /** Text of the Check In button, or null if not rendered (not loaded yet / not eligible) */
+    checkButtonText: string | null;
+}
+
+/** Marker attribute used to tag elements found by text so Puppeteer can click them */
+const CLICK_MARKER = 'data-autopunch';
+
 export class AkriviaProvider extends BaseAttendanceProvider {
     // Selectors for Akrivia HCM
     private readonly SELECTORS = {
@@ -34,16 +52,10 @@ export class AkriviaProvider extends BaseAttendanceProvider {
         passwordInput: '#password',
         loginButton: '#login',
 
-        // Dashboard navigation
-        attendanceMenu: '#sidenav-attendance_management > div',
-        submenu: '#ah-sidenav-sub',
-        dashboardLink: '/html/body/app-root/app-dashboard/app-user-dashboard-v4/div[1]/app-common-sidemenu/div/div[2]/ul/li[1]/a',
-
-        // Attendance page
-        punchCard: 'body > app-root > app-user-attendance-dashboard > div.ah-page-wrapper > div > div > div.col-md-7.col-xl-8 > div:nth-child(1) > div.ah-card-body.ah-hs-dash-card-body.ng-star-inserted',
-        checkInButton: '#check-in',
-        modalContainer: '#checkinRequest > div > div',
-        confirmButton: '#request-cancel'
+        // Attendance page (elements tagged by readAttendanceCard / clickDialogButton)
+        checkInButton: `[${CLICK_MARKER}="check-button"]`,
+        statusDialog: '[data-slot="status-dialog"]',
+        dialogConfirmButton: `[${CLICK_MARKER}="dialog-confirm"]`
     };
 
     // URLs
@@ -58,90 +70,120 @@ export class AkriviaProvider extends BaseAttendanceProvider {
 
     // ==================== HELPER FUNCTIONS ====================
 
+    private sleep(ms: number): Promise<void> {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    /**
+     * Read the "Attendance logs" card: today's/yesterday's In and Out times and the Check In button.
+     * Also tags the Check In button with CLICK_MARKER so it can be clicked via SELECTORS.checkInButton.
+     *
+     * NOTE: no named inner functions inside page.evaluate - tsx/esbuild injects a `__name`
+     * helper into them which doesn't exist in the browser context.
+     */
+    private async readAttendanceCard(page: Page): Promise<AttendanceCardSnapshot> {
+        return page.evaluate((marker: string) => {
+            const card = Array.from(document.querySelectorAll('[data-slot="section-card"]')).find(c =>
+                (c.querySelector('[data-slot="card-header"]')?.textContent || '').trim().toLowerCase().includes('attendance logs')
+            );
+            if (!card) {
+                return { cardFound: false, rows: [], checkButtonText: null };
+            }
+
+            const button = Array.from(card.querySelectorAll('[data-slot="card-action"] button')).find(b =>
+                /check\s*(in|out)/i.test(b.textContent || '')
+            );
+            if (button) {
+                button.setAttribute(marker, 'check-button');
+            }
+
+            // card-content > div > [one div per day: heading div + In/Out time rows]
+            // Each value sits right before its label: <div>10:52 AM</div><div>In time</div>
+            const list = card.querySelector('[data-slot="card-content"]')?.firstElementChild;
+            const rows = Array.from(list ? list.children : []).map(row => {
+                const leaves = Array.from(row.querySelectorAll('div')).filter(d => d.children.length === 0);
+                const inLabel = leaves.find(d => (d.textContent || '').trim().toLowerCase() === 'in time');
+                const outLabel = leaves.find(d => (d.textContent || '').trim().toLowerCase() === 'out time');
+                return {
+                    heading: (row.firstElementChild?.textContent || '').trim(),
+                    hasLabels: !!inLabel && !!outLabel,
+                    inTime: (inLabel?.previousElementSibling?.textContent || '').trim() || '—',
+                    outTime: (outLabel?.previousElementSibling?.textContent || '').trim() || '—'
+                };
+            })
+                // Skeleton placeholders (while loading) have no In/Out time labels
+                .filter(r => r.hasLabels)
+                .map(r => ({ heading: r.heading, inTime: r.inTime, outTime: r.outTime }));
+
+            return {
+                cardFound: true,
+                rows,
+                checkButtonText: button ? (button.textContent || '').trim() : null
+            };
+        }, CLICK_MARKER);
+    }
+
+    /**
+     * Poll the attendance card until `ready(snapshot)` is true or the timeout elapses.
+     *
+     * @returns the last snapshot read (check `ready` again if you need to know whether it timed out)
+     */
+    private async waitForAttendanceCard(
+        page: Page,
+        ready: (snapshot: AttendanceCardSnapshot) => boolean,
+        maxWaitMs: number,
+        pollMs = 1000
+    ): Promise<AttendanceCardSnapshot> {
+        const startTime = Date.now();
+        let snapshot: AttendanceCardSnapshot = { cardFound: false, rows: [], checkButtonText: null };
+
+        while (Date.now() - startTime < maxWaitMs) {
+            try {
+                snapshot = await this.readAttendanceCard(page);
+                if (ready(snapshot)) {
+                    return snapshot;
+                }
+            } catch (error) {
+                // Page may be mid-navigation/re-render - keep polling
+            }
+            await this.sleep(pollMs);
+        }
+
+        return snapshot;
+    }
+
     /**
      * Parse today's punch in/out times from the attendance dashboard
-     * 
+     *
      * @param page - Puppeteer page object
      * @returns Promise<PunchData> - Object with inTime and outTime
      */
     private async parseTodaysPunches(page: Page): Promise<PunchData> {
-        try {
-            // Wait for punch card to load
-            await page.waitForSelector(this.SELECTORS.punchCard, { timeout: this.config.timeoutMs });
+        console.log(`[${this.getName()}] Parsing today's punches from Attendance logs card...`);
 
-            console.log(`[${this.getName()}] Parsing today's punches from punch card...`);
+        const snapshot = await this.waitForAttendanceCard(page, s => s.rows.length > 0, this.config.timeoutMs);
 
-            // Extract punch times using DOM manipulation in page context
-            const punchData = await page.evaluate((punchCardSelector) => {
-                const punchCard = document.querySelector(punchCardSelector);
-                if (!punchCard) {
-                    throw new Error('Punch card element not found during evaluation');
-                }
-
-                // Find all shift data sections
-                const shiftDataElements = punchCard.querySelectorAll('.ah-shift-data');
-
-                // Get the first section (usually Today or Yesterday)
-                const firstSection = shiftDataElements[0];
-                if (!firstSection) {
-                    console.log('No shift data sections found');
-                    return { inTime: '—', outTime: '—', dateFound: 'NONE', isToday: false };
-                }
-
-                // Verify if this section is for "Today"
-                // Robust check: Just look for the word "Today" regardless of date format
-                const dateHeader = firstSection.querySelector('.ah-shift-data-head .data');
-                const dateText = dateHeader ? dateHeader.textContent?.trim() : '';
-                const isToday = dateText ? dateText.toLowerCase().includes('today') : false;
-                
-                if (!isToday) {
-                    // If the first card isn't "Today", then today's card hasn't been created yet
-                    // (e.g., very early morning or holiday view)
-                    return { inTime: '—', outTime: '—', dateFound: dateText, isToday: false };
-                }
-
-                // Find all shift content sets (In time and Out time)
-                const contentSets = firstSection.querySelectorAll('.ah-shift-content-set');
-
-                let inTime = '—';
-                let outTime = '—';
-
-                // First set is In time
-                if (contentSets[0]) {
-                    const inTimeEl = contentSets[0].querySelector('.ah-time .val-text');
-                    if (inTimeEl) {
-                        inTime = inTimeEl.textContent?.trim() || '—';
-                    }
-                }
-
-                // Second set is Out time
-                if (contentSets[1]) {
-                    const outTimeEl = contentSets[1].querySelector('.ah-time .val-text');
-                    if (outTimeEl) {
-                        outTime = outTimeEl.textContent?.trim() || '—';
-                    }
-                }
-
-                return { inTime, outTime, dateFound: dateText, isToday: true };
-            }, this.SELECTORS.punchCard);
-
-            if (!punchData.isToday) {
-                console.log(`[${this.getName()}] First card is NOT today (Found: "${punchData.dateFound}"). Assuming no punches for today.`);
-            } else {
-                console.log(`[${this.getName()}] Parsed data for "${punchData.dateFound}" - In: "${punchData.inTime}", Out: "${punchData.outTime}"`);
-            }
-
-            return { inTime: punchData.inTime, outTime: punchData.outTime };
-
-        } catch (error) {
-            console.error(`[${this.getName()}] Error parsing punches:`, error);
-            throw error;
+        if (!snapshot.cardFound) {
+            throw new Error('"Attendance logs" card not found on attendance dashboard');
         }
+        if (snapshot.rows.length === 0) {
+            throw new Error('"Attendance logs" card did not finish loading (no In/Out time rows found)');
+        }
+
+        // First row is "Today, DD-Mon-YYYY", second is "Yesterday DD-Mon-YYYY"
+        const today = snapshot.rows[0];
+        if (!today.heading.toLowerCase().includes('today')) {
+            console.log(`[${this.getName()}] First row is NOT today (Found: "${today.heading}"). Assuming no punches for today.`);
+            return { inTime: '—', outTime: '—' };
+        }
+
+        console.log(`[${this.getName()}] Parsed data for "${today.heading}" - In: "${today.inTime}", Out: "${today.outTime}"`);
+        return { inTime: today.inTime, outTime: today.outTime };
     }
 
     /**
      * Check if user is already punched in
-     * 
+     *
      * @param inTime - In time string from punch card
      * @returns boolean - true if punched in, false if not
      */
@@ -154,7 +196,7 @@ export class AkriviaProvider extends BaseAttendanceProvider {
 
     /**
      * Check if user is already punched out
-     * 
+     *
      * @param outTime - Out time string from punch card
      * @returns boolean - true if punched out, false if not
      */
@@ -166,42 +208,9 @@ export class AkriviaProvider extends BaseAttendanceProvider {
     }
 
     /**
-     * Wait for element with retry logic
-     * 
-     * @param page - Puppeteer page
-     * @param selector - CSS selector to wait for
-     * @param maxWaitMs - Maximum time to wait
-     * @param retryDelayMs - Delay between retries
-     * @returns Promise<boolean> - true if found, false if timeout
-     */
-    private async waitForElementWithRetry(
-        page: Page,
-        selector: string,
-        maxWaitMs: number,
-        retryDelayMs: number
-    ): Promise<boolean> {
-        const startTime = Date.now();
-
-        while (Date.now() - startTime < maxWaitMs) {
-            try {
-                const element = await page.$(selector);
-                if (element) {
-                    return true;
-                }
-            } catch (error) {
-                // Element not found, continue
-            }
-
-            await new Promise(resolve => setTimeout(resolve, retryDelayMs));
-        }
-
-        return false;
-    }
-
-    /**
      * Perform authentication and navigate to attendance dashboard
      * Common logic shared between login and logout
-     * 
+     *
      * @param credentials - User credentials
      * @returns Promise<void>
      */
@@ -221,16 +230,16 @@ export class AkriviaProvider extends BaseAttendanceProvider {
         await this.page!.waitForSelector(this.SELECTORS.passwordInput, { timeout: this.config.timeoutMs });
         await this.page!.type(this.SELECTORS.passwordInput, credentials.password);
 
-        // Phase 3: Click login button
-        console.log(`[${this.getName()}] Clicking login button...`);
-        await this.page!.click(this.SELECTORS.loginButton)
-
-        // Phase 4: Wait for dashboard redirect
-        console.log(`[${this.getName()}] Waiting for dashboard redirect...`);
-        await this.page!.waitForNavigation({
-            waitUntil: 'networkidle0',
-            timeout: this.config.timeoutMs
-        });
+        // Phase 3 + 4: Click login button and wait for dashboard redirect
+        // (wait is registered before the click so a fast redirect can't be missed)
+        console.log(`[${this.getName()}] Clicking login button and waiting for dashboard redirect...`);
+        await Promise.all([
+            this.page!.waitForNavigation({
+                waitUntil: 'networkidle0',
+                timeout: this.config.timeoutMs
+            }),
+            this.page!.click(this.SELECTORS.loginButton)
+        ]);
 
         // Verify we're on the dashboard
         const currentUrl = this.page!.url();
@@ -238,121 +247,156 @@ export class AkriviaProvider extends BaseAttendanceProvider {
             throw new Error('Failed to navigate to dashboard - login may have failed');
         }
 
-        // Phase 5: Navigate to Attendance Dashboard
+        // Phase 5: Navigate to Attendance Dashboard directly
+        // (the old sidebar menu ids / XPath no longer exist after the redesign)
         console.log(`[${this.getName()}] Navigating to attendance dashboard...`);
-
-        // Click Attendance Management menu
-        await this.page!.waitForSelector(this.SELECTORS.attendanceMenu, { timeout: this.config.timeoutMs });
-        await this.page!.click(this.SELECTORS.attendanceMenu);
-
-        // Wait for submenu to expand
-        await new Promise(resolve => setTimeout(resolve, 3000));
-
-        // Click Dashboard link using XPath
-        const dashboardLinks = await this.page!.$x(this.SELECTORS.dashboardLink);
-        if (dashboardLinks.length === 0) {
-            throw new Error('Dashboard link not found in submenu');
-        }
-        // @ts-ignore - Puppeteer XPath elements are clickable
-        await dashboardLinks[0].click();
-
-        // Wait for attendance page to load
-        await this.page!.waitForNavigation({
+        await this.page!.goto(this.URLS.attendance, {
             waitUntil: 'networkidle0',
             timeout: this.config.timeoutMs
         });
 
-        // Verify we're on attendance dashboard
+        // Verify we're on attendance dashboard (an expired session would bounce to /login)
         const attendanceUrl = this.page!.url();
         if (!attendanceUrl.includes('attendance-dashboard')) {
-            throw new Error('Failed to navigate to attendance dashboard');
+            throw new Error(`Failed to navigate to attendance dashboard (landed on ${attendanceUrl})`);
         }
 
         console.log(`[${this.getName()}] Successfully authenticated and navigated to attendance dashboard`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+
+    /**
+     * Read the state and text of the confirmation/status dialog, if open
+     */
+    private async readStatusDialog(): Promise<{ status: string | null; text: string } | null> {
+        return this.page!.evaluate((selector: string) => {
+            const dialog = document.querySelector(selector) as HTMLElement | null;
+            if (!dialog) return null;
+            return {
+                status: dialog.getAttribute('data-status'),
+                text: (dialog.innerText || '').replace(/\s+/g, ' ').trim()
+            };
+        }, this.SELECTORS.statusDialog);
+    }
+
+    /**
+     * Find the "Confirm" button inside the status dialog and tag it with CLICK_MARKER
+     * so it can be clicked via SELECTORS.dialogConfirmButton
+     *
+     * @returns true if the button was found
+     */
+    private async tagDialogConfirmButton(): Promise<boolean> {
+        return this.page!.evaluate((selector: string, marker: string) => {
+            const dialogEl = document.querySelector(selector);
+            const button = Array.from(dialogEl ? dialogEl.querySelectorAll('button') : [])
+                .find(b => (b.textContent || '').trim().toLowerCase() === 'confirm');
+            if (!button) return false;
+            button.setAttribute(marker, 'dialog-confirm');
+            return true;
+        }, this.SELECTORS.statusDialog, CLICK_MARKER);
     }
 
     /**
      * Execute check-in or check-out action
-     * 
+     *
+     * Flow on the redesigned page:
+     *   "Check In" button (same button for in & out)
+     *     -> status dialog, data-status="confirm" ("Hit the confirm button to register your punch")
+     *     -> "Confirm"
+     *     -> data-status="loading" -> "success" ("Good to go") | "failed" (error message)
+     *
      * @returns Promise<void>
      */
     private async executeCheckAction(): Promise<void> {
-        // Click Check In button
-        console.log(`[${this.getName()}] Clicking Check In button...`);
-        await this.page!.waitForSelector(this.SELECTORS.checkInButton, { timeout: this.config.timeoutMs });
-        await this.page!.click(this.SELECTORS.checkInButton);
-
-        // Wait for modal to appear
-        console.log(`[${this.getName()}] Waiting for confirmation modal...`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
-
-        // Verify modal is visible
-        const modalVisible = await this.page!.$(this.SELECTORS.modalContainer);
-        if (!modalVisible) {
-            throw new Error('Confirmation modal did not appear');
+        // Wait for the Check In button (rendered only after eligibility loads)
+        console.log(`[${this.getName()}] Waiting for Check In button...`);
+        const snapshot = await this.waitForAttendanceCard(this.page!, s => s.checkButtonText !== null, 30000);
+        if (snapshot.checkButtonText === null) {
+            throw new Error('Check In button not found - web punching may not be enabled for this user, or the page did not load');
         }
 
-        // Click Confirm button
-        console.log(`[${this.getName()}] Clicking Confirm button...`);
-        await this.page!.waitForSelector(this.SELECTORS.confirmButton, { timeout: this.config.timeoutMs });
-        await this.page!.click(this.SELECTORS.confirmButton);
+        console.log(`[${this.getName()}] Clicking "${snapshot.checkButtonText}" button...`);
+        await this.page!.click(this.SELECTORS.checkInButton);
 
-        // Wait for modal to close
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        // Wait for confirmation dialog
+        console.log(`[${this.getName()}] Waiting for confirmation dialog...`);
+        await this.page!.waitForSelector(this.SELECTORS.statusDialog, { visible: true, timeout: 15000 });
+        await this.sleep(1000);
+
+        const dialog = await this.readStatusDialog();
+        if (!dialog || dialog.status !== 'confirm') {
+            // e.g. "failed" straight away when location is required but unavailable
+            throw new Error(`Confirmation dialog not in confirm state (status: ${dialog?.status}): ${dialog?.text}`);
+        }
+
+        // Tag and click the Confirm button
+        const confirmFound = await this.tagDialogConfirmButton();
+
+        if (!confirmFound) {
+            throw new Error(`Confirm button not found in dialog: ${dialog.text}`);
+        }
+
+        console.log(`[${this.getName()}] Clicking Confirm button...`);
+        await this.page!.click(this.SELECTORS.dialogConfirmButton);
+
+        // Wait for the punch request to finish
+        const startTime = Date.now();
+        while (Date.now() - startTime < this.config.timeoutMs) {
+            await this.sleep(1000);
+            const state = await this.readStatusDialog();
+
+            if (!state) {
+                // Dialog closed by itself - let verification decide
+                console.log(`[${this.getName()}] Dialog closed after confirm`);
+                return;
+            }
+            if (state.status === 'success') {
+                console.log(`[${this.getName()}] Punch registered: ${state.text}`);
+                return;
+            }
+            if (state.status === 'failed') {
+                throw new Error(`Punch failed: ${state.text}`);
+            }
+        }
+
+        throw new Error('Timed out waiting for punch confirmation result');
     }
 
     /**
      * Verify punch action success by refreshing and checking punch data
-     * 
+     *
      * @param checkType - 'login' or 'logout'
      * @returns Promise<boolean> - true if verified, false otherwise
      */
     private async verifyPunchSuccess(checkType: 'login' | 'logout'): Promise<boolean> {
-        // Refresh the page
-        console.log(`[${this.getName()}] Refreshing page to verify ${checkType}...`);
-        await this.page!.reload({ waitUntil: 'networkidle0', timeout: this.config.timeoutMs });
-
-        // Retry loop: max 30s, check every 5s (6 attempts)
+        // Retry loop: max ~30s, check every 5s (6 attempts)
         const maxRetries = 6;
         const retryDelay = 5000;
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            console.log(`[${this.getName()}] Verification attempt ${attempt}/${maxRetries}...`);
+            console.log(`[${this.getName()}] Verification attempt ${attempt}/${maxRetries} - refreshing page...`);
 
-            // Wait before checking
-            await new Promise(resolve => setTimeout(resolve, retryDelay));
+            try {
+                await this.page!.reload({ waitUntil: 'networkidle0', timeout: this.config.timeoutMs });
 
-            // Try to find punch card
-            const elementFound = await this.waitForElementWithRetry(
-                this.page!,
-                this.SELECTORS.punchCard,
-                5000,
-                1000
-            );
+                const punchData = await this.parseTodaysPunches(this.page!);
 
-            if (!elementFound) {
-                console.log(`[${this.getName()}] Punch card not found, retrying...`);
-                continue;
-            }
-
-            // Parse punch data
-            const punchData = await this.parseTodaysPunches(this.page!);
-
-            // Check if the appropriate field is updated
-            if (checkType === 'login') {
-                if (this.isPunchedIn(punchData.inTime)) {
+                if (checkType === 'login' && this.isPunchedIn(punchData.inTime)) {
                     console.log(`[${this.getName()}] Login verified - In time: ${punchData.inTime}`);
                     return true;
                 }
-            } else {
-                if (this.isPunchedOut(punchData.outTime)) {
+                if (checkType === 'logout' && this.isPunchedOut(punchData.outTime)) {
                     console.log(`[${this.getName()}] Logout verified - Out time: ${punchData.outTime}`);
                     return true;
                 }
+
+                console.log(`[${this.getName()}] ${checkType} not verified yet, retrying...`);
+            } catch (error) {
+                console.log(`[${this.getName()}] Verification read failed (${error instanceof Error ? error.message : error}), retrying...`);
             }
 
-            console.log(`[${this.getName()}] ${checkType} not verified yet, retrying...`);
+            if (attempt < maxRetries) {
+                await this.sleep(retryDelay);
+            }
         }
 
         return false;
